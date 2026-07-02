@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2034  # variables are consumed by setup.sh
+
+########################################
+# GIMP Setup configuration
+#
+# Copy this file to config.sh and fill in
+# your values. config.sh is gitignored.
+#
+# Every value falls back to an environment
+# variable of the same name, so a parent
+# script (for example, linux-mint-setup)
+# can export these instead of shipping a
+# config.sh.
+########################################
+
+#
+# Google Gemini API key for the AI Tools feature
+# (Filters > AI > Remove Selection / Generative Fill).
+#
+# Get a free key at https://aistudio.google.com/apikey
+#
+# Leave empty to configure the backend later.
+#
+GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+
+#
+# OpenAI API key used by the GIMP AI Plugin
+# (Filters > AI > Inpainting / Image Generator).
+#
+# The plugin stores its key through its own dialog:
+# set it in GIMP via Filters > AI > Settings.
+# This variable is kept here for reference only.
+#
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+
+#
+# Extra GIMP menu shortcuts added by the Menu Shortcuts
+# feature, one entry per shortcut:
+#
+#   'action|binding|comment'
+#
+# Find action names with GIMP's Edit > Keyboard Shortcuts
+# dialog or in the shortcutsrc file of an existing profile.
+#
+# Examples:
+#   'view-zoom-fit-in|<Primary>0|Fit image in window'
+#   'layers-new|<Primary><Shift>n|Photoshop: New Layer'
+#
+GIMP_SHORTCUTS=(
+)
