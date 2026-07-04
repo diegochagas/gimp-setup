@@ -15,37 +15,24 @@
 ########################################
 
 #
-# Google Gemini API key for the AI Tools feature
-# (Filters > AI > Remove Selection / Generative Fill).
+# Google Gemini API key, shared by the AI plug-ins
+# (Filters > AI > Remove Selection / Generative Fill / Image Generator
+# with the Gemini provider).
 #
 # Get a free key at https://aistudio.google.com/apikey
 #
-# Leave empty to configure the backend later.
+# Leave empty to configure the backend later. The setup saves it to
+# ~/.config/PhotoGIMP/gemini-api-key (host and Flatpak sandbox copies).
 #
 GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 
 #
 # OpenAI API key used by the GIMP AI Plugin
-# (Filters > AI > Inpainting / Image Generator).
+# (Filters > AI > Generative Fill / Image Generator / Layer Composite
+# with the OpenAI provider — paid, from platform.openai.com/api-keys).
 #
-# The plugin stores its key through its own dialog:
-# set it in GIMP via Filters > AI > Settings.
-# This variable is kept here for reference only.
+# Leave empty to configure it later. The setup saves it to
+# ~/.config/PhotoGIMP/openai-api-key (host and Flatpak sandbox copies);
+# a key set in GIMP via Filters > AI > Settings takes precedence.
 #
 OPENAI_API_KEY="${OPENAI_API_KEY:-}"
-
-#
-# Extra GIMP menu shortcuts added by the Menu Shortcuts
-# feature, one entry per shortcut:
-#
-#   'action|binding|comment'
-#
-# Find action names with GIMP's Edit > Keyboard Shortcuts
-# dialog or in the shortcutsrc file of an existing profile.
-#
-# Examples:
-#   'view-zoom-fit-in|<Primary>0|Fit image in window'
-#   'layers-new|<Primary><Shift>n|Photoshop: New Layer'
-#
-GIMP_SHORTCUTS=(
-)

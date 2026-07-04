@@ -10,8 +10,11 @@
 #   - G'MIC-Qt
 #   - Resynthesizer
 #
-# The plug-in branches follow the
-# installed GIMP branch automatically.
+# Flathub publishes the plug-ins under
+# GIMP's major version as the branch
+# ("3"), not under GIMP's own branch
+# name ("stable"), so the branch is
+# derived from GIMP's version number.
 #
 # See docs/GIMP.md.
 #
@@ -24,21 +27,59 @@
 FEATURE_NAME="GIMP (Flatpak)"
 FEATURE_PRIORITY=10
 
-feature_install() {
-    local changed=false
+########################################
+# Prints the Flathub branch used by the
+# GIMP plug-in packages: the installed
+# GIMP's major version, falling back
+# to "3".
+#
+# LC_ALL=C keeps `flatpak info` output
+# in English — field names are localized
+# otherwise (e.g. "Ramo:" in pt_BR),
+# which used to break the parsing and
+# produce an empty branch.
+########################################
+gimp_plugin_branch() {
+    local version=""
 
-    local GIMP_BRANCH="3"
-
-    install_flatpak_package org.gimp.GIMP && changed=true
-
-    if [[ "$DRY_RUN" == false ]] && is_flatpak_installed org.gimp.GIMP; then
-        GIMP_BRANCH="$(flatpak info org.gimp.GIMP | sed -n 's/^Branch:[[:space:]]*//p')"
+    if is_flatpak_installed org.gimp.GIMP; then
+        version="$(LC_ALL=C flatpak info org.gimp.GIMP 2>/dev/null |
+            sed -n 's/^[[:space:]]*Version:[[:space:]]*//p' | head -n 1)"
     fi
 
-    install_flatpak_package "org.gimp.GIMP.Plugin.GMic//$GIMP_BRANCH" && changed=true
-    install_flatpak_package "org.gimp.GIMP.Plugin.Resynthesizer//$GIMP_BRANCH" && changed=true
+    if [[ "$version" =~ ^([0-9]+)\. ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo "3"
+    fi
+}
 
-    if $changed; then
+feature_install() {
+    local changed=false
+    local failed=false
+    local rc
+
+    rc=0
+    install_flatpak_package org.gimp.GIMP || rc=$?
+    (( rc == 0 )) && changed=true
+    (( rc == 2 )) && failed=true
+
+    local plugin_branch
+    plugin_branch="$(gimp_plugin_branch)"
+
+    rc=0
+    install_flatpak_package "org.gimp.GIMP.Plugin.GMic//$plugin_branch" || rc=$?
+    (( rc == 0 )) && changed=true
+    (( rc == 2 )) && failed=true
+
+    rc=0
+    install_flatpak_package "org.gimp.GIMP.Plugin.Resynthesizer//$plugin_branch" || rc=$?
+    (( rc == 0 )) && changed=true
+    (( rc == 2 )) && failed=true
+
+    if $failed; then
+        SUMMARY+=("$FEATURE_NAME|❌ Failed (see log)")
+    elif $changed; then
         SUMMARY+=("$FEATURE_NAME|$INSTALLATION_MESSAGE")
     else
         SUMMARY+=("$FEATURE_NAME|⏭️ Already installed")

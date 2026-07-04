@@ -1,32 +1,25 @@
 #!/usr/bin/env python3
 #
-# PhotoGIMP AI tools: Photoshop-style "Remove" and "Generative Fill" for GIMP 3.
+# AI Remove Selection: Photoshop-style "Remove tool" for GIMP 3.
 #
-#   AI Remove       — inpaints (removes) whatever is inside the current
-#                     selection, reconstructing the background.
-#                     Photoshop-like workflow: press Q (Quick Mask), paint
-#                     over the object with a brush (semi-transparent red
-#                     overlay), press Q again, then run this.
+# Inpaints (removes) whatever is inside the current selection and
+# reconstructs the background. Photoshop-like workflow: press Q
+# (Quick Mask), paint over the object with a brush (semi-transparent
+# red overlay), press Q again, then run this from Filters > AI.
 #
-#   Generative Fill — fills the current selection from a text prompt,
-#                     blending with the surrounding image. Only pixels
-#                     inside the selection are changed; the result comes
-#                     back as a separate layer with a feathered mask.
+# For prompt-based fills ("Generative Fill") use the GIMP AI Plugin
+# installed by gimp-setup, which shares the same backends and API keys.
 #
 # Backends:
 #   gemini   Google Gemini image model ("Nano Banana"), free API tier.
-#            Key from https://aistudio.google.com/apikey — put it in the
-#            GEMINI_API_KEY environment variable or in the file
-#            ~/.config/PhotoGIMP/gemini-api-key
-#   iopaint  Local inpainting (LaMa model), no prompt support, great for
-#            Remove:  pipx install iopaint && iopaint start --model=lama
+#            Key from https://aistudio.google.com/apikey, stored in
+#            ~/.config/PhotoGIMP/gemini-api-key (host and/or Flatpak
+#            sandbox copy) or the GEMINI_API_KEY environment variable.
+#   iopaint  Local inpainting (LaMa model), no key needed:
+#            pipx install iopaint && iopaint start --model=lama --port=8080
 #            Serves on http://127.0.0.1:8080 (override: PHOTOGIMP_IOPAINT_URL)
-#   sdwebui  Local Stable Diffusion WebUI (AUTOMATIC1111) with --api, for
-#            prompt-based fills on http://127.0.0.1:7860
-#            (override: PHOTOGIMP_A1111_URL)
-#
-# Adobe Firefly is not included: its Generative Fill API requires paid
-# enterprise OAuth credentials, with no free personal tier.
+#   sdwebui  Local Stable Diffusion WebUI (AUTOMATIC1111) with --api on
+#            http://127.0.0.1:7860 (override: PHOTOGIMP_A1111_URL)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -36,8 +29,10 @@
 import base64
 import json
 import os
+import re
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 
@@ -63,29 +58,41 @@ REMOVE_INSTRUCTION = (
     'anything outside the white area. Return only the edited photo at the '
     'same size, with no added text, borders or watermarks.')
 
-FILL_INSTRUCTION = (
-    'You are a photo editing engine. The first image is a photo. The '
-    'second image is a mask of the same size: the WHITE area marks the '
-    'region to edit. Inside that region only, do the following: {prompt}. '
-    'Blend the result seamlessly with the rest of the photo, matching its '
-    'lighting, colors, grain and perspective. Do not change anything '
-    'outside the white area. Return only the edited photo at the same '
-    'size, with no added text, borders or watermarks.')
-
 
 # ---------------------------------------------------------------- backends
 
 def _gemini_api_key():
+    """Find the Gemini key: env var, host key file, sandbox key file.
+
+    Under Flatpak GIMP, GLib.get_user_config_dir() points inside the
+    sandbox (~/.var/app/org.gimp.GIMP/config), while gimp-setup writes
+    the key to the host ~/.config — so both locations are probed.
+    """
     key = os.environ.get('GEMINI_API_KEY', '').strip()
     if key:
         return key
-    key_file = os.path.join(GLib.get_user_config_dir(),
-                            'PhotoGIMP', 'gemini-api-key')
-    try:
-        with open(key_file, encoding='utf-8') as f:
-            return f.read().strip()
-    except OSError:
-        return ''
+    candidates = [
+        os.path.join(os.path.expanduser('~'), '.config',
+                     'PhotoGIMP', 'gemini-api-key'),
+        os.path.join(GLib.get_user_config_dir(),
+                     'PhotoGIMP', 'gemini-api-key'),
+    ]
+    for key_file in candidates:
+        try:
+            with open(key_file, encoding='utf-8') as f:
+                key = f.read().strip()
+            if key:
+                return key
+        except OSError:
+            continue
+    return ''
+
+
+RATE_LIMIT_MESSAGE = (
+    'Gemini rate limit reached (HTTP 429). The free tier only allows a few '
+    'image requests per minute and per day. Wait a minute and try again, '
+    'check your quota at https://aistudio.google.com/usage, or switch the '
+    'Backend to IOPaint (local), which has no limits.')
 
 
 def _http_json(url, payload, headers, timeout=300):
@@ -98,7 +105,37 @@ def _http_json(url, payload, headers, timeout=300):
         return resp.read()
 
 
-def call_gemini(context_png, mask_png, instruction):
+def _retry_delay_seconds(body):
+    """Retry delay suggested by a Gemini 429 response, if any."""
+    match = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', body)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def _gemini_post(payload, key):
+    """POST to Gemini, retrying once when it suggests a short delay."""
+    for attempt in (1, 2):
+        try:
+            return _http_json(GEMINI_URL, payload, {'x-goog-api-key': key})
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode('utf-8', 'replace')
+            except Exception:
+                body = ''
+            if e.code == 429:
+                delay = _retry_delay_seconds(body)
+                if attempt == 1 and delay is not None and delay <= 35:
+                    Gimp.progress_set_text(
+                        'Gemini rate limit — retrying in %.0fs...' % delay)
+                    time.sleep(delay)
+                    continue
+                raise RuntimeError(RATE_LIMIT_MESSAGE)
+            raise RuntimeError('Gemini API error %d: %s'
+                               % (e.code, body[:300]))
+
+
+def call_gemini(context_png, mask_png):
     key = _gemini_api_key()
     if not key:
         raise RuntimeError(
@@ -107,7 +144,7 @@ def call_gemini(context_png, mask_png, instruction):
             'GEMINI_API_KEY or save it to ~/.config/PhotoGIMP/gemini-api-key')
     payload = {
         'contents': [{'parts': [
-            {'text': instruction},
+            {'text': REMOVE_INSTRUCTION},
             {'inlineData': {'mimeType': 'image/png',
                             'data': base64.b64encode(context_png).decode()}},
             {'inlineData': {'mimeType': 'image/png',
@@ -115,7 +152,7 @@ def call_gemini(context_png, mask_png, instruction):
         ]}],
         'generationConfig': {'responseModalities': ['IMAGE', 'TEXT']},
     }
-    raw = _http_json(GEMINI_URL, payload, {'x-goog-api-key': key})
+    raw = _gemini_post(payload, key)
     reply = json.loads(raw)
     for candidate in reply.get('candidates', []):
         for part in candidate.get('content', {}).get('parts', []):
@@ -141,13 +178,13 @@ def call_iopaint(context_png, mask_png):
             '  iopaint start --model=lama --port=8080' % (IOPAINT_URL, e))
 
 
-def call_sdwebui(context_png, mask_png, prompt, width, height, denoising):
+def call_sdwebui(context_png, mask_png, width, height):
     payload = {
         'init_images': [base64.b64encode(context_png).decode()],
         'mask': base64.b64encode(mask_png).decode(),
-        'prompt': prompt,
+        'prompt': 'background',
         'negative_prompt': 'text, watermark, low quality',
-        'denoising_strength': denoising,
+        'denoising_strength': 0.9,
         'inpainting_fill': 1,          # keep original pixels as base
         'inpainting_mask_invert': 0,
         'inpaint_full_res': False,     # context is already cropped
@@ -218,8 +255,7 @@ def _render_context_and_mask(image, cx, cy, cw, ch, grow, tmpdir):
     return ctx_png, mask_png
 
 
-def _composite_result(image, result_bytes, cx, cy, cw, ch, layer_name,
-                      tmpdir):
+def _composite_result(image, result_bytes, cx, cy, cw, ch, tmpdir):
     """Insert the AI result as a new layer masked to the selection."""
     result_path = os.path.join(tmpdir, 'result.png')
     with open(result_path, 'wb') as f:
@@ -231,7 +267,7 @@ def _composite_result(image, result_bytes, cx, cy, cw, ch, layer_name,
     if layer.get_width() != cw or layer.get_height() != ch:
         layer.scale(cw, ch, False)
     layer.set_offsets(cx, cy)
-    layer.set_name(layer_name)
+    layer.set_name('AI Remove')
 
     # Mask the layer to a slightly feathered copy of the selection so the
     # edit blends with the untouched pixels around it, then restore the
@@ -246,7 +282,7 @@ def _composite_result(image, result_bytes, cx, cy, cw, ch, layer_name,
     return layer
 
 
-def _run_ai(procedure, image, mode, backend, prompt, padding):
+def _run_remove(image, backend, padding):
     ok, non_empty, x1, y1, x2, y2 = Gimp.Selection.bounds(image)
     if not non_empty:
         raise RuntimeError(
@@ -261,36 +297,25 @@ def _run_ai(procedure, image, mode, backend, prompt, padding):
     cw = min(image.get_width(), x2 + padding) - cx
     ch = min(image.get_height(), y2 + padding) - cy
 
-    grow = 4 if mode == 'remove' else 0
-    tmpdir = tempfile.mkdtemp(prefix='photogimp-ai-')
+    tmpdir = tempfile.mkdtemp(prefix='ai-remove-selection-')
 
     Gimp.progress_init('Preparing image region...')
     ctx_png, mask_png = _render_context_and_mask(image, cx, cy, cw, ch,
-                                                 grow, tmpdir)
+                                                 4, tmpdir)
 
     Gimp.progress_set_text('Waiting for %s...' % backend)
     Gimp.progress_pulse()
     if backend == 'iopaint':
-        if mode == 'fill':
-            raise RuntimeError('IOPaint (LaMa) cannot use text prompts. '
-                               'Pick the Gemini or Stable Diffusion WebUI '
-                               'backend for Generative Fill.')
         result = call_iopaint(ctx_png, mask_png)
     elif backend == 'sdwebui':
-        sd_prompt = prompt if mode == 'fill' else 'background'
-        denoise = 1.0 if mode == 'fill' else 0.9
-        result = call_sdwebui(ctx_png, mask_png, sd_prompt, cw, ch, denoise)
+        result = call_sdwebui(ctx_png, mask_png, cw, ch)
     else:
-        instruction = (REMOVE_INSTRUCTION if mode == 'remove'
-                       else FILL_INSTRUCTION.format(prompt=prompt))
-        result = call_gemini(ctx_png, mask_png, instruction)
+        result = call_gemini(ctx_png, mask_png)
 
     Gimp.progress_set_text('Compositing result...')
-    name = ('AI Remove' if mode == 'remove'
-            else 'Generative Fill: %s' % prompt)
     image.undo_group_start()
     try:
-        _composite_result(image, result, cx, cy, cw, ch, name, tmpdir)
+        _composite_result(image, result, cx, cy, cw, ch, tmpdir)
     finally:
         image.undo_group_end()
 
@@ -310,13 +335,10 @@ def _run_ai(procedure, image, mode, backend, prompt, padding):
 # ---------------------------------------------------------------- plug-in
 
 def run(procedure, run_mode, image, drawables, config, data):
-    name = procedure.get_name()
-    mode = 'remove' if name == 'photogimp-ai-remove' else 'fill'
-
     if run_mode == Gimp.RunMode.INTERACTIVE:
         gi.require_version('GimpUi', '3.0')
         from gi.repository import GimpUi
-        GimpUi.init(name)
+        GimpUi.init(procedure.get_name())
         dialog = GimpUi.ProcedureDialog(procedure=procedure, config=config)
         dialog.fill(None)
         if not dialog.run():
@@ -325,16 +347,10 @@ def run(procedure, run_mode, image, drawables, config, data):
                                                GLib.Error())
         dialog.destroy()
 
-    backend = config.get_property('backend')
-    padding = config.get_property('padding')
-    prompt = config.get_property('prompt') if mode == 'fill' else ''
-    if mode == 'fill' and not prompt.strip():
-        return procedure.new_return_values(
-            Gimp.PDBStatusType.CALLING_ERROR,
-            GLib.Error('Type a prompt describing what to generate.'))
-
     try:
-        _run_ai(procedure, image, mode, backend, prompt, padding)
+        _run_remove(image,
+                    config.get_property('backend'),
+                    config.get_property('padding'))
     except Exception as e:
         return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR,
                                            GLib.Error(str(e)))
@@ -342,12 +358,12 @@ def run(procedure, run_mode, image, drawables, config, data):
                                        GLib.Error())
 
 
-class PhotoGimpAI(Gimp.PlugIn):
+class AiRemoveSelection(Gimp.PlugIn):
     def do_set_i18n(self, procname):
         return False
 
     def do_query_procedures(self):
-        return ['photogimp-ai-remove', 'photogimp-ai-generative-fill']
+        return ['ai-remove-selection']
 
     def do_create_procedure(self, name):
         procedure = Gimp.ImageProcedure.new(self, name,
@@ -357,34 +373,18 @@ class PhotoGimpAI(Gimp.PlugIn):
         procedure.set_sensitivity_mask(Gimp.ProcedureSensitivityMask.DRAWABLE)
         procedure.set_attribution('PhotoGIMP', 'PhotoGIMP contributors',
                                   '2026')
+        procedure.set_menu_label('_Remove Selection (AI)...')
+        procedure.set_documentation(
+            'Remove the selected object with AI inpainting',
+            'Removes whatever is inside the current selection and '
+            'reconstructs the background, like Photoshop\'s Remove tool. '
+            'Paint the selection with Quick Mask (Q) for a brush-like '
+            'workflow.', name)
 
         backend = Gimp.Choice.new()
         backend.add('gemini', 0, 'Gemini / Nano Banana (online, free key)', '')
-        if name == 'photogimp-ai-remove':
-            backend.add('iopaint', 1, 'IOPaint - LaMa (local)', '')
+        backend.add('iopaint', 1, 'IOPaint - LaMa (local)', '')
         backend.add('sdwebui', 2, 'Stable Diffusion WebUI (local)', '')
-
-        if name == 'photogimp-ai-remove':
-            procedure.set_menu_label('_Remove Selection (AI)...')
-            procedure.set_documentation(
-                'Remove the selected object with AI inpainting',
-                'Removes whatever is inside the current selection and '
-                'reconstructs the background, like Photoshop\'s Remove '
-                'tool. Paint the selection with Quick Mask (Q) for a '
-                'brush-like workflow.', name)
-        else:
-            procedure.set_menu_label('_Generative Fill...')
-            procedure.set_documentation(
-                'Fill the selection from a text prompt with AI',
-                'Replaces the content of the current selection following '
-                'a text prompt, blended with the surrounding image, like '
-                'Photoshop\'s Generative Fill. The result is added as a '
-                'separately masked layer.', name)
-            procedure.add_string_argument(
-                'prompt', '_Prompt',
-                'What to generate inside the selection', '',
-                GObject.ParamFlags.READWRITE)
-
         procedure.add_choice_argument(
             'backend', '_Backend', 'AI service to use', backend, 'gemini',
             GObject.ParamFlags.READWRITE)
@@ -394,10 +394,7 @@ class PhotoGimpAI(Gimp.PlugIn):
             16, 1024, 128, GObject.ParamFlags.READWRITE)
 
         procedure.add_menu_path('<Image>/Filters/AI')
-        if name == 'photogimp-ai-generative-fill':
-            procedure.add_menu_path('<Image>/Edit')
-
         return procedure
 
 
-Gimp.main(PhotoGimpAI.__gtype__, sys.argv)
+Gimp.main(AiRemoveSelection.__gtype__, sys.argv)

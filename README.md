@@ -39,11 +39,14 @@ Optional. Copy the example file and fill in your values:
 cp config.sh.example config.sh
 ```
 
-| Variable         | Purpose                                                           |
-| ---------------- | ----------------------------------------------------------------- |
-| `GEMINI_API_KEY` | Saved to `~/.config/PhotoGIMP/gemini-api-key` for the AI Tools    |
-| `OPENAI_API_KEY` | Reference only — set it inside GIMP via `Filters > AI > Settings` |
-| `GIMP_SHORTCUTS` | Extra menu shortcuts, one `'action\|binding\|comment'` per entry  |
+| Variable         | Purpose                                                             |
+| ---------------- | ------------------------------------------------------------------- |
+| `GEMINI_API_KEY` | Free key for the Gemini provider — saved to the shared key files    |
+| `OPENAI_API_KEY` | Paid key for the OpenAI provider — saved to the shared key files    |
+
+The keys are written to `~/.config/PhotoGIMP/{gemini,openai}-api-key` on
+the host **and** inside the GIMP Flatpak sandbox, where every AI plug-in
+finds them (see [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)).
 
 `config.sh` is gitignored. Every variable also falls back to an environment
 variable of the same name, so a parent script can `export GEMINI_API_KEY=...`
@@ -84,32 +87,23 @@ commands and guard direct file writes with `DRY_RUN`).
 | Priority | Feature                                              | What it installs                                        | Docs                                                 |
 | -------- | ---------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- |
 | 10       | [`gimp.sh`](features/gimp.sh)                         | Flatpak GIMP + G'MIC + Resynthesizer                    | [GIMP.md](docs/GIMP.md)                               |
-| 20       | [`ai-remove-background.sh`](features/ai-remove-background.sh) | AI background removal (local, offline)          | [AI_REMOVE_BACKGROUND.md](docs/AI_REMOVE_BACKGROUND.md) |
 | 30       | [`photogimp.sh`](features/photogimp.sh)               | Photoshop-inspired interface and configuration          | [PHOTOGIMP.md](docs/PHOTOGIMP.md)                     |
+| 40       | [`photoshop-keymap.sh`](features/photoshop-keymap.sh) | Photoshop keyboard shortcuts (shortcutsrc + controllerrc) | [PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md)     |
 | 40       | [`slos-gimpainter.sh`](features/slos-gimpainter.sh)   | Painting brushes, dynamics and tool presets             | [SLOS_GIMPAINTER.md](docs/SLOS_GIMPAINTER.md)         |
 | 50       | [`linuxbeaver.sh`](features/linuxbeaver.sh)           | LinuxBeaver GEGL effect plug-ins                        | [LINUXBEAVER.md](docs/LINUXBEAVER.md)                 |
-| 60       | [`gimp-ai-plugin.sh`](features/gimp-ai-plugin.sh)     | OpenAI-powered Inpainting / Image Generator             | [GIMP_AI_PLUGIN.md](docs/GIMP_AI_PLUGIN.md)           |
-| 70       | [`menu-shortcuts.sh`](features/menu-shortcuts.sh)     | Photoshop-style menu shortcuts (+ your own from config) | [MENU_SHORTCUTS.md](docs/MENU_SHORTCUTS.md)           |
-| 80       | [`ai-tools.sh`](features/ai-tools.sh)                 | AI Remove + Generative Fill (bundled plug-in)           | [AI_TOOLS.md](docs/AI_TOOLS.md)                       |
+| 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The three AI plug-ins + shared API keys                 | [AI_PLUGINS.md](docs/AI_PLUGINS.md)                   |
 
-The order matters: GIMP is installed first; PhotoGIMP runs after the
-plug-ins because it layers its configuration on top of them;
-SLOS-GIMPainter, the shortcuts and the AI tools run after PhotoGIMP so their
-changes survive it.
+The order matters: GIMP is installed first; PhotoGIMP layers its
+configuration on top; the Photoshop keymap runs after PhotoGIMP on purpose
+so its shortcuts win; the AI plug-ins run last so their files survive the
+configuration overwrites.
 
 #### GIMP (Flatpak) — `features/gimp.sh`
 
 GIMP from Flathub with the G'MIC and Resynthesizer plug-ins. The plug-in
-branches follow the installed GIMP branch automatically. Resynthesizer adds
+branches follow the installed GIMP's **major version** (Flathub publishes
+them as branch `3`, not `stable`). Resynthesizer adds
 `Filters > Enhance > Heal Selection`. See [docs/GIMP.md](docs/GIMP.md).
-
-#### AI Remove Background — `features/ai-remove-background.sh`
-
-The [AI Remove Background for GIMP 3](https://github.com/galixstroyer/ai-remove-background-g3)
-plug-in, patched to run inside Flatpak GIMP's Python with `rembg` and
-`onnxruntime`. Use it from `Filters > AI > AI Remove Background`; the first
-run downloads a ~176 MB model. See
-[docs/AI_REMOVE_BACKGROUND.md](docs/AI_REMOVE_BACKGROUND.md).
 
 #### PhotoGIMP — `features/photogimp.sh`
 
@@ -131,40 +125,33 @@ collection (`Filters > Text Styling`, `Filters > Render > Fun`, ...), with a
 manifest so reruns replace stale binaries cleanly. See
 [docs/LINUXBEAVER.md](docs/LINUXBEAVER.md).
 
-#### GIMP AI Plugin — `features/gimp-ai-plugin.sh`
+#### Photoshop Keymap — `features/photoshop-keymap.sh`
 
-The [GIMP AI Plugin](https://github.com/lukaso/gimp-ai) by lukaso
-(Inpainting, Image Generator, Layer Composite under `Filters > AI`).
-Requires an OpenAI API key, set inside GIMP via `Filters > AI > Settings`.
-See [docs/GIMP_AI_PLUGIN.md](docs/GIMP_AI_PLUGIN.md).
+The [Photoshop keymap for GIMP](https://github.com/loloolooo/photoshop-keymap-for-gimp)
+(`shortcutsrc` + `controllerrc`, pinned to a commit) installed into every
+GIMP 3.x profile with timestamped backups. Shortcuts show next to the menu
+entries like in Photoshop (`Ctrl+Alt+I` Image Size, `Ctrl+Alt+C` Canvas
+Size, `Ctrl+L` Levels...). GIMP must be closed while this feature runs.
+See [docs/PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md).
 
-#### Menu Shortcuts — `features/menu-shortcuts.sh`
+#### AI Plug-ins — `features/ai-plugins.sh`
 
-Photoshop-style shortcuts added to every GIMP 3.x profile:
+The three AI plug-ins, installed as one feature (details and API key setup
+in [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)):
 
-| Shortcut     | Menu entry           | Action         |
-| ------------ | -------------------- | -------------- |
-| `Ctrl+Alt+I` | Image > Scale Image… | `image-scale`  |
-| `Ctrl+Alt+C` | Image > Canvas Size… | `image-resize` |
+- **AI Remove Background** — `Filters > AI > AI Remove Background`. Cuts
+  out the subject locally with rembg/U2Net (first run downloads a ~176 MB
+  model). No key needed.
+- **Generative Fill** — `Filters > AI > Generative Fill…`. Fills the
+  selection from a text prompt; also Image Generator and Layer Composite.
+  Vendored patched [GIMP AI Plugin](https://github.com/lukaso/gimp-ai)
+  with a provider switch: OpenAI (default), Gemini or SD WebUI.
+- **AI Remove Selection** — `Filters > AI > Remove Selection (AI)…`.
+  Photoshop-style Remove tool from PhotoGIMP: Quick Mask-paint the object,
+  run, gone. Backends: Gemini, IOPaint (local), SD WebUI (local).
 
-Add your own through the `GIMP_SHORTCUTS` array in `config.sh` — no code
-changes needed. GIMP must be closed while this feature runs. See
-[docs/MENU_SHORTCUTS.md](docs/MENU_SHORTCUTS.md) and
-[docs/SHORTCUTS.md](docs/SHORTCUTS.md) for the full PhotoGIMP mapping.
-
-#### AI Tools — `features/ai-tools.sh`
-
-The bundled PhotoGIMP AI tools plug-in
-(`assets/plug-ins/photogimp-ai/photogimp-ai.py`):
-
-- `Filters > AI > Remove Selection (AI)…` — inpaints (removes) whatever is
-  inside the current selection, reconstructing the background.
-- `Filters > AI > Generative Fill…` — fills the current selection from a text
-  prompt (also in the Edit menu).
-
-Backends: Gemini / Nano Banana (online, free tier — set `GEMINI_API_KEY` in
-`config.sh`), IOPaint (local) or Stable Diffusion WebUI (local). See
-[docs/AI_TOOLS.md](docs/AI_TOOLS.md).
+Shared API keys from `config.sh` are written for all of them, host and
+Flatpak sandbox alike.
 
 ## Notes
 

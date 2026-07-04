@@ -318,11 +318,13 @@ values_match() {
 
 ########################################
 # Checks whether GIMP is running.
+#
+# The process name carries the version
+# (gimp-3.0, gimp-3.2, ...), so match it
+# as a pattern instead of listing names.
 ########################################
 gimp_is_running() {
-    pgrep -x gimp >/dev/null 2>&1 ||
-    pgrep -x gimp-3.0 >/dev/null 2>&1 ||
-    pgrep -x gimp-3 >/dev/null 2>&1
+    pgrep -x 'gimp([-.][0-9.]+)?' >/dev/null 2>&1
 }
 
 ########################################
@@ -361,6 +363,11 @@ is_flatpak_installed() {
 #
 # Arguments:
 #   $1 - Flatpak ID (optionally ID//branch)
+#
+# Returns:
+#   0 - installed now
+#   1 - already installed
+#   2 - installation failed
 ########################################
 install_flatpak_package() {
     local target="$1"
@@ -373,7 +380,14 @@ install_flatpak_package() {
 
     print_step "Installing $app_id..."
 
-    run flatpak install -y flathub "$target"
+    # --noninteractive keeps flatpak from ever prompting (an ambiguous
+    # ref prompts even with -y), and </dev/null keeps it from reading
+    # the answer off inherited stdin — which used to swallow the
+    # feature list and abort the whole setup after the first feature.
+    if ! run flatpak install --noninteractive flathub "$target" < /dev/null; then
+        print_info "❌ Failed to install $app_id ($target)"
+        return 2
+    fi
 
     if [[ "$DRY_RUN" == false ]]; then
         print_info "✅ $app_id installed"
@@ -534,8 +548,16 @@ run_features() {
         ordered+=("$(printf '%03d' "$(feature_priority "$feature_file")")|$feature_file")
     done
 
+    #
+    # Iterate over a pre-built array instead of piping the list into the
+    # loop through stdin: a feature command that reads stdin (curl,
+    # flatpak, python...) must never be able to swallow the feature list.
+    #
+    local sorted=()
+    mapfile -t sorted < <(printf '%s\n' "${ordered[@]}" | sort)
+
     local entry
-    while IFS= read -r entry; do
+    for entry in "${sorted[@]}"; do
         feature_file="${entry#*|}"
 
         FEATURE_NAME="$(basename "$feature_file")"
@@ -553,7 +575,7 @@ run_features() {
         print_step "Feature: $FEATURE_NAME"
 
         feature_install
-    done < <(printf '%s\n' "${ordered[@]}" | sort)
+    done
 
     print_section "Setup complete!"
 }
