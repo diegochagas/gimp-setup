@@ -139,9 +139,10 @@ See [docs/PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md).
 The three AI plug-ins, installed as one feature (details and API key setup
 in [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)):
 
-- **AI Remove Background** — `Filters > AI > AI Remove Background`. Cuts
-  out the subject locally with rembg/U2Net (first run downloads a ~176 MB
-  model). No key needed.
+- **WithoutBG** — `Tools > WithoutBG > Remove Background…`. Cuts out the
+  subject via the self-hosted WithoutBG server
+  (withoutbg.diegochagas.com) and adds the matte as an unapplied layer
+  mask. No key needed.
 - **Generative Fill** — `Filters > AI > Generative Fill…`. Fills the
   selection from a text prompt; also Image Generator and Layer Composite.
   Vendored patched [GIMP AI Plugin](https://github.com/lukaso/gimp-ai)
@@ -158,11 +159,6 @@ Flatpak sandbox alike.
 - If GIMP has not been opened before the setup runs, the features that need
   an existing GIMP profile are skipped with a warning. Open GIMP once, close
   it, and re-run `./setup.sh`.
-- The AI Remove Background installation patches the current upstream plug-in.
-  If its code structure changes, the setup stops instead of installing a
-  potentially broken patch.
-- Flatpak GIMP receives access to the entire home directory through
-  `flatpak override --user org.gimp.GIMP --filesystem=home`.
 - The GEGL plug-in directory must contain only `.so` files at its top level.
   Subdirectories or other file types may prevent GIMP from starting.
 - The script downloads software from third-party projects, so review the

@@ -7,12 +7,16 @@
 # Installs the three AI plug-ins as one
 # feature, plus their shared API keys:
 #
-#   AI Remove Background
-#     Filters > AI > AI Remove Background
-#     Cuts out the subject / deletes the
-#     background. Local (rembg/U2Net),
-#     no key needed.
-#     https://github.com/galixstroyer/ai-remove-background-g3
+#   WithoutBG
+#     Tools > WithoutBG > Remove Background
+#     Cuts out the subject: adds the
+#     alpha matte as an unapplied layer
+#     mask. Vendored patched copy of
+#     withoutbg/withoutbg-gimp targeting
+#     the self-hosted server at
+#     https://withoutbg.diegochagas.com
+#     — see assets/vendor/withoutbg/PATCHES.md.
+#     No key needed.
 #
 #   Generative Fill (GIMP AI Plugin)
 #     Filters > AI > Generative Fill
@@ -180,150 +184,34 @@ ai_write_shared_key() {
 }
 
 ########################################
-# AI Remove Background: local rembg
-# (U2Net) plug-in for Flatpak GIMP.
-# Installs rembg + onnxruntime inside
-# the Flatpak Python and patches the
-# plug-in to use them.
+# WithoutBG: background removal via the
+# self-hosted WithoutBG server. Vendored
+# patched copy of withoutbg/withoutbg-gimp
+# (see assets/vendor/withoutbg/PATCHES.md).
+# Replaces the old rembg-based AI Remove
+# Background plug-in.
 ########################################
-ai_install_remove_background() {
-    local plugin_name="ai-remove-background-g3"
+ai_install_withoutbg() {
+    local src="$ASSETS_DIR/vendor/withoutbg/withoutbg.py"
 
-    #
-    # Already installed in every profile? If only some profiles have it
-    # (e.g. a new profile appeared after a GIMP upgrade), reuse the
-    # existing patched copy instead of redoing the full install.
-    #
-    local existing=""
-    local missing=false
-    local dir
-    for dir in "${AI_PROFILES[@]}"; do
-        if file_exists "$dir/plug-ins/$plugin_name/$plugin_name.py"; then
-            existing="$dir/plug-ins/$plugin_name/$plugin_name.py"
-        else
-            missing=true
-        fi
-    done
-
-    if [[ "$missing" == false ]]; then
-        print_info "⏭️ AI Remove Background already installed"
-        SUMMARY+=("AI Remove Background|⏭️ Already installed")
+    if ! file_exists "$src"; then
+        print_info "❌ Vendored plug-in file not found: $src"
+        SUMMARY+=("WithoutBG|❌ Missing assets")
         return
     fi
 
-    if [[ -n "$existing" ]]; then
-        print_step "Installing AI Remove Background (from existing copy)..."
-        local rc=0
-        ai_install_plugin "$plugin_name" "" "$existing" || rc=$?
-        SUMMARY+=("AI Remove Background|$INSTALLATION_MESSAGE")
-        return
-    fi
+    print_step "Installing WithoutBG (background removal)..."
 
-    if ! is_flatpak_installed org.gimp.GIMP; then
-        print_info "⏭️ AI Remove Background needs Flatpak GIMP — skipped"
-        SUMMARY+=("AI Remove Background|⏭️ Needs Flatpak GIMP")
-        return
-    fi
-
-    print_step "Installing AI Remove Background..."
-
-    local temp_dir plugin_file
-    temp_dir="$(mktemp -d)"
-    plugin_file="$temp_dir/$plugin_name/$plugin_name.py"
-
-    if ! run git clone --depth 1 \
-            https://github.com/galixstroyer/ai-remove-background-g3.git \
-            "$temp_dir/$plugin_name" < /dev/null; then
-        print_info "❌ Failed to clone AI Remove Background"
-        SUMMARY+=("AI Remove Background|❌ Failed (see log)")
-        rm -rf "$temp_dir"
-        return
-    fi
-
-    #
-    # rembg + onnxruntime inside the Flatpak Python environment.
-    #
-    if ! run flatpak run --command=bash org.gimp.GIMP -c "
-    python3 -m ensurepip --user 2>/dev/null || true
-    python3 -m pip install --user 'rembg[cpu,cli]' onnxruntime
-    " < /dev/null; then
-        print_info "❌ Failed to install rembg in the Flatpak Python"
-        SUMMARY+=("AI Remove Background|❌ Failed (see log)")
-        rm -rf "$temp_dir"
-        return
-    fi
-
-    local site_packages
-    site_packages="$(flatpak run --command=bash org.gimp.GIMP -c \
-        "python3 -c 'import site; print(site.getusersitepackages())'" < /dev/null)"
-
-    export AI_PLUGIN_FILE="$plugin_file" AI_SITE_PACKAGES="$site_packages"
-
-    #
-    # Patch the plug-in to call the Flatpak Python + rembg directly.
-    #
-    if [[ "$DRY_RUN" == true ]]; then
-        print_info "➜ Patch AI Remove Background plugin"
-    else
-        python3 <<'PYEOF'
-import os
-import re
-
-plugin_file = os.environ["AI_PLUGIN_FILE"]
-site_packages = os.environ["AI_SITE_PACKAGES"]
-
-with open(plugin_file, encoding="utf-8") as file:
-    content = file.read()
-
-content = content.replace(
-    'DEFAULT_PYTHON = os.path.expanduser("~/.rembg/bin/python")',
-    'DEFAULT_PYTHON = "/usr/bin/python3"',
-)
-
-new_func = f'''def _run_rembg(python_exe: str, model: str, alpha_matting: bool,
-               ae_value: int, in_path: str, out_path: str):
-    script = (
-        "import sys\\n"
-        "sys.path.insert(0, {site_packages!r})\\n"
-        "from rembg import remove, new_session\\n"
-        "from PIL import Image\\n"
-        "kwargs = {{'alpha_matting': " + str(alpha_matting) + ", 'alpha_matting_erode_size': " + str(int(ae_value)) + "}}\\n"
-        "session = new_session('" + model + "')\\n"
-        "inp = Image.open('" + in_path + "')\\n"
-        "out = remove(inp, session=session, **kwargs)\\n"
-        "out.save('" + out_path + "')\\n"
-    )
-    proc = subprocess.Popen(["/usr/bin/python3", "-c", script],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, shell=False)
-    _, stderr = proc.communicate()
-    if proc.returncode != 0:
-        msg = stderr.decode("utf-8", errors="ignore").strip()
-        raise RuntimeError(msg or "rembg exited with an error")
-'''
-
-content, replacements = re.subn(
-    r"def _run_rembg\(.*?\n(?=def |\Z)",
-    lambda _: new_func + "\n",
-    content,
-    flags=re.DOTALL,
-)
-if replacements != 1:
-    raise RuntimeError(f"Expected to patch one _run_rembg function, patched {replacements}")
-
-with open(plugin_file, "w", encoding="utf-8") as file:
-    file.write(content)
-PYEOF
-    fi
-
-    run flatpak override --user org.gimp.GIMP --filesystem=home < /dev/null
-
+    # Replaces the old rembg-based plug-in.
     local rc=0
-    ai_install_plugin "$plugin_name" "" "$plugin_file" || rc=$?
+    ai_install_plugin "withoutbg" "ai-remove-background-g3" "$src" || rc=$?
 
-    rm -rf "$temp_dir"
-
-    SUMMARY+=("AI Remove Background|$INSTALLATION_MESSAGE")
+    if (( rc == 0 )); then
+        ai_refresh_pluginrc
+        SUMMARY+=("WithoutBG|$INSTALLATION_MESSAGE")
+    else
+        SUMMARY+=("WithoutBG|⏭️ Already installed")
+    fi
 }
 
 ########################################
@@ -432,7 +320,7 @@ feature_install() {
         return
     fi
 
-    ai_install_remove_background
+    ai_install_withoutbg
 
     ai_install_generative_fill
 

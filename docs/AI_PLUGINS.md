@@ -1,22 +1,33 @@
 # AI Plug-ins — `features/ai-plugins.sh`
 
 One feature installs the three AI plug-ins and their shared API keys.
-All tools appear under **Filters → AI** after restarting GIMP.
+After restarting GIMP, Generative Fill and AI Remove Selection appear
+under **Filters → AI**; WithoutBG under **Tools → WithoutBG**.
 
 | Tool | What it does | Providers | Key needed |
 |---|---|---|---|
-| **AI Remove Background** | Cuts the subject out / deletes the background | rembg / U2Net (local) | None (offline) |
+| **WithoutBG** | Cuts the subject out: adds the alpha matte as an unapplied layer mask | Self-hosted WithoutBG server (withoutbg.diegochagas.com) | None |
 | **Generative Fill** | Fills the **selection** from a **text prompt**; also *Image Generator* (text → new layer) and *Layer Composite* (AI-blend layers) | OpenAI gpt-image-1 (default) · Gemini "Nano Banana" · Stable Diffusion WebUI (local) | OpenAI: paid · Gemini: free tier · SD WebUI: none |
 | **AI Remove Selection** | Photoshop-style **Remove tool**: select (or Quick Mask-paint) an object, run, it's gone | Gemini · IOPaint/LaMa (local) · SD WebUI (local) | Gemini: free tier · locals: none |
 
 ## The tools
 
-### AI Remove Background
+### WithoutBG (background removal)
 
-From [galixstroyer/ai-remove-background-g3](https://github.com/galixstroyer/ai-remove-background-g3).
-The setup installs `rembg` + `onnxruntime` inside the Flatpak GIMP Python
-and patches the plug-in to use them. Fully local — nothing is uploaded.
-Requires Flatpak GIMP.
+A **vendored, patched** copy of
+[withoutbg/withoutbg-gimp](https://github.com/withoutbg/withoutbg-gimp)
+(GPL v3+) from `assets/vendor/withoutbg/` — see
+[PATCHES.md](../assets/vendor/withoutbg/PATCHES.md) for the diff. It
+targets the self-hosted WithoutBG API at
+`https://withoutbg.diegochagas.com` (no key needed; the URL can be
+changed per run in the dialog).
+
+Usage: **Tools → WithoutBG → Remove Background…** — the matte comes back
+as an *unapplied* layer mask so you can review or tweak it, then commit
+with *Layer → Mask → Apply Layer Mask*.
+
+It replaces the old rembg-based *AI Remove Background* plug-in, which the
+setup removes from the GIMP profiles automatically.
 
 ### Generative Fill (GIMP AI Plugin)
 
