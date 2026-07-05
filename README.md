@@ -1,5 +1,9 @@
 # GIMP Setup
 
+![Bash](https://img.shields.io/badge/Bash-5%2B-green)
+![License](https://img.shields.io/github/license/diegochagas/homelab-backup)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+
 Personal one-command installer for the complete GIMP ecosystem on Linux:
 Flatpak GIMP 3, plug-ins, brushes, presets and extra features such as
 Photoshop-style shortcuts and AI tools.
