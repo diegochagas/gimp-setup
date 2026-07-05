@@ -231,7 +231,7 @@ ai_install_generative_fill() {
     for src in "${sources[@]}"; do
         if ! file_exists "$src"; then
             print_info "❌ Vendored plug-in file not found: $src"
-            SUMMARY+=("Generative Fill (GIMP AI)|❌ Missing assets")
+            SUMMARY+=("Generative Fill|❌ Missing assets")
             return
         fi
     done
@@ -243,9 +243,9 @@ ai_install_generative_fill() {
 
     if (( rc == 0 )); then
         ai_refresh_pluginrc
-        SUMMARY+=("Generative Fill (GIMP AI)|$INSTALLATION_MESSAGE")
+        SUMMARY+=("Generative Fill|$INSTALLATION_MESSAGE")
     else
-        SUMMARY+=("Generative Fill (GIMP AI)|⏭️ Already installed")
+        SUMMARY+=("Generative Fill|⏭️ Already installed")
     fi
 }
 
