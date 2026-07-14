@@ -127,12 +127,22 @@ manifest so reruns replace stale binaries cleanly. See
 
 #### Photoshop Keymap — `features/photoshop-keymap.sh`
 
-The [Photoshop keymap for GIMP](https://github.com/loloolooo/photoshop-keymap-for-gimp)
-(`shortcutsrc` + `controllerrc`, pinned to a commit) installed into every
-GIMP 3.x profile with timestamped backups. Shortcuts show next to the menu
-entries like in Photoshop (`Ctrl+Alt+I` Image Size, `Ctrl+Alt+C` Canvas
-Size, `Ctrl+L` Levels...). GIMP must be closed while this feature runs.
-See [docs/PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md).
+Two layers, installed into every GIMP 3.x profile with timestamped
+backups (details and customization in
+[docs/PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md)):
+
+- **Photoshop keymap for GIMP** — the community
+  [photoshop-keymap-for-gimp](https://github.com/loloolooo/photoshop-keymap-for-gimp)
+  (`shortcutsrc` + `controllerrc`, pinned to a commit and sanitized of a
+  malformed upstream line). GIMP's shortcuts follow Photoshop's and show
+  next to the menu entries like in Photoshop: `Ctrl+Alt+I` Image Size,
+  `Ctrl+Alt+C` Canvas Size, `Ctrl+L` Levels, `Ctrl+E` Merge Down...
+- **Keymap Extras** — extra bindings for GIMP-only actions, layered on
+  top through the `PHOTOSHOP_KEYMAP_EXTRAS` array on shortcuts nothing
+  else uses: `Ctrl+Alt+E` File > Overwrite and `Ctrl+Alt+Shift+W`
+  File > Export As.
+
+GIMP must be closed while this feature runs.
 
 #### AI Plug-ins — `features/ai-plugins.sh`
 
