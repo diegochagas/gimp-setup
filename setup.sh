@@ -322,9 +322,16 @@ values_match() {
 # The process name carries the version
 # (gimp-3.0, gimp-3.2, ...), so match it
 # as a pattern instead of listing names.
+# The Flatpak launcher is checked too:
+# during startup the gimp binary has not
+# been exec'ed yet, and a GIMP that
+# starts while the setup runs would
+# overwrite freshly written config on
+# exit.
 ########################################
 gimp_is_running() {
-    pgrep -x 'gimp([-.][0-9.]+)?' >/dev/null 2>&1
+    pgrep -x 'gimp([-.][0-9.]+)?' >/dev/null 2>&1 ||
+    pgrep -f 'flatpak run.*org\.gimp\.GIMP' >/dev/null 2>&1
 }
 
 ########################################
