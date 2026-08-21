@@ -1,12 +1,12 @@
 # AI Plug-ins — `features/ai-plugins.sh`
 
-One feature installs the three AI plug-ins and their shared API keys.
+One feature installs the three AI plug-ins and their shared settings.
 After restarting GIMP, Generative Fill and AI Remove Selection appear
 under **Filters → AI**; WithoutBG under **Tools → WithoutBG**.
 
 | Tool | What it does | Providers | Key needed |
 |---|---|---|---|
-| **WithoutBG** | Cuts the subject out: adds the alpha matte as an unapplied layer mask | Self-hosted WithoutBG server (127.0.0.1:8000) | None |
+| **WithoutBG** | Cuts the subject out: adds the alpha matte as an unapplied layer mask | WithoutBG server from `WITHOUTBG_SERVER_URL` | None |
 | **Generative Fill** | Fills the **selection** from a **text prompt**; also *Image Generator* (text → new layer) and *Layer Composite* (AI-blend layers) | OpenAI gpt-image-1 (default) · Gemini "Nano Banana" · Stable Diffusion WebUI (local) | OpenAI: paid · Gemini: free tier · SD WebUI: none |
 | **AI Remove Selection** | Photoshop-style **Remove tool**: select (or Quick Mask-paint) an object, run, it's gone | Gemini · IOPaint/LaMa (local) · SD WebUI (local) | Gemini: free tier · locals: none |
 
@@ -18,9 +18,10 @@ A **vendored, patched** copy of
 [withoutbg/withoutbg-gimp](https://github.com/withoutbg/withoutbg-gimp)
 (GPL v3+) from `assets/vendor/withoutbg/` — see
 [PATCHES.md](../assets/vendor/withoutbg/PATCHES.md) for the diff. It
-targets the self-hosted WithoutBG API at
-`http://127.0.0.1:8000` (no key needed; the URL can be
-changed per run in the dialog).
+targets the WithoutBG API set in `WITHOUTBG_SERVER_URL` in `config.sh`
+— your own self-hosted instance, or a local server (Docker or the Mac
+app) by default. No key needed, and the URL can still be changed per run
+in the dialog.
 
 Usage: **Tools → WithoutBG → Remove Background…** — the matte comes back
 as an *unapplied* layer mask so you can review or tweak it, then commit
@@ -73,7 +74,7 @@ sandbox (this is what fixes "No Gemini API key found" on Flatpak GIMP):
 | **Stable Diffusion WebUI** | [AUTOMATIC1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui) with `--api` on port 7860 | Free, local |
 
 Environment overrides: `PHOTOGIMP_IOPAINT_URL`, `PHOTOGIMP_A1111_URL`,
-`GEMINI_IMAGE_MODEL`.
+`GEMINI_IMAGE_MODEL`, `WITHOUTBG_SERVER_URL`.
 
 > **Privacy:** online providers (Gemini, OpenAI) upload the selected
 > region plus some context. Use the local providers for images you can't
@@ -86,6 +87,9 @@ Environment overrides: `PHOTOGIMP_IOPAINT_URL`, `PHOTOGIMP_A1111_URL`,
 - **"No Gemini API key found"** — re-run `./setup.sh` with
   `GEMINI_API_KEY` set in `config.sh`, or create the key files above
   manually.
+- **"Cannot reach the WithoutBG server"** — set `WITHOUTBG_SERVER_URL` in
+  `config.sh` and re-run `./setup.sh`, or type the URL in the plug-in
+  dialog; the default assumes a server on `http://127.0.0.1:8000`.
 - **"HTTP 429: Too Many Requests" from Gemini** — the free tier only
   allows a few image requests per minute and per day. The plug-ins retry
   once automatically when Google suggests a short delay; otherwise wait a

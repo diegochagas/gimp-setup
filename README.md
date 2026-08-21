@@ -43,14 +43,16 @@ Optional. Copy the example file and fill in your values:
 cp config.sh.example config.sh
 ```
 
-| Variable         | Purpose                                                             |
-| ---------------- | ------------------------------------------------------------------- |
-| `GEMINI_API_KEY` | Free key for the Gemini provider — saved to the shared key files    |
-| `OPENAI_API_KEY` | Paid key for the OpenAI provider — saved to the shared key files    |
+| Variable               | Purpose                                                                    |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`       | Free key for the Gemini provider — saved to the shared key files           |
+| `OPENAI_API_KEY`       | Paid key for the OpenAI provider — saved to the shared key files           |
+| `WITHOUTBG_SERVER_URL` | WithoutBG server used by the background removal plug-in (default: local)   |
 
-The keys are written to `~/.config/PhotoGIMP/{gemini,openai}-api-key` on
-the host **and** inside the GIMP Flatpak sandbox, where every AI plug-in
-finds them (see [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)).
+They are written to `~/.config/PhotoGIMP/{gemini,openai}-api-key` and
+`~/.config/PhotoGIMP/withoutbg-server-url` on the host **and** inside the
+GIMP Flatpak sandbox, where every AI plug-in finds them (see
+[docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)).
 
 `config.sh` is gitignored. Every variable also falls back to an environment
 variable of the same name, so a parent script can `export GEMINI_API_KEY=...`
@@ -154,9 +156,8 @@ The three AI plug-ins, installed as one feature (details and API key setup
 in [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)):
 
 - **WithoutBG** — `Tools > WithoutBG > Remove Background…`. Cuts out the
-  subject via the self-hosted WithoutBG server
-  (127.0.0.1:8000) and adds the matte as an unapplied layer
-  mask. No key needed.
+  subject via the WithoutBG server set in `WITHOUTBG_SERVER_URL` and adds
+  the matte as an unapplied layer mask. No key needed.
 - **Generative Fill** — `Filters > AI > Generative Fill…`. Fills the
   selection from a text prompt; also Image Generator and Layer Composite.
   Vendored patched [GIMP AI Plugin](https://github.com/lukaso/gimp-ai)
@@ -165,8 +166,8 @@ in [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)):
   Photoshop-style Remove tool from PhotoGIMP: Quick Mask-paint the object,
   run, gone. Backends: Gemini, IOPaint (local), SD WebUI (local).
 
-Shared API keys from `config.sh` are written for all of them, host and
-Flatpak sandbox alike.
+Shared settings from `config.sh` (API keys and the WithoutBG server URL)
+are written for all of them, host and Flatpak sandbox alike.
 
 ## Notes
 

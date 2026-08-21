@@ -5,7 +5,7 @@
 # Feature: AI Plug-ins
 #
 # Installs the three AI plug-ins as one
-# feature, plus their shared API keys:
+# feature, plus their shared settings:
 #
 #   WithoutBG
 #     Tools > WithoutBG > Remove Background
@@ -13,8 +13,7 @@
 #     alpha matte as an unapplied layer
 #     mask. Vendored patched copy of
 #     withoutbg/withoutbg-gimp targeting
-#     the self-hosted server at
-#     http://127.0.0.1:8000
+#     the server in WITHOUTBG_SERVER_URL
 #     — see assets/vendor/withoutbg/PATCHES.md.
 #     No key needed.
 #
@@ -35,11 +34,12 @@
 #     object and it is removed. Backends:
 #     Gemini, IOPaint (local), SD WebUI.
 #
-#   Shared API keys
-#     GEMINI_API_KEY / OPENAI_API_KEY
-#     from config.sh are written to
-#     ~/.config/PhotoGIMP/ on the host
-#     AND inside the GIMP Flatpak sandbox
+#   Shared settings
+#     GEMINI_API_KEY / OPENAI_API_KEY /
+#     WITHOUTBG_SERVER_URL from config.sh
+#     are written to ~/.config/PhotoGIMP/
+#     on the host AND inside the GIMP
+#     Flatpak sandbox
 #     (~/.var/app/org.gimp.GIMP/config/),
 #     so the plug-ins find them in both
 #     worlds.
@@ -133,13 +133,14 @@ ai_refresh_pluginrc() {
 }
 
 ########################################
-# Writes an API key to the shared key
-# files on the host and inside the GIMP
-# Flatpak sandbox.
+# Writes a shared setting (API key or
+# server URL) to the shared config files
+# on the host and inside the GIMP Flatpak
+# sandbox.
 #
 # Arguments:
-#   $1 - Key file name (e.g. gemini-api-key)
-#   $2 - Key value
+#   $1 - File name (e.g. gemini-api-key)
+#   $2 - Value
 #
 # Returns:
 #   0 - a file was written
@@ -277,7 +278,7 @@ ai_install_remove_selection() {
 }
 
 ########################################
-# Shared API keys from config.sh.
+# Shared settings from config.sh.
 ########################################
 ai_configure_keys() {
     local changed=false
@@ -302,12 +303,21 @@ ai_configure_keys() {
         print_info "OPENAI_API_KEY not set in config.sh — set it for the OpenAI provider."
     fi
 
-    if [[ "$configured" == false ]]; then
-        SUMMARY+=("AI API Keys|⏭️ Not configured")
-    elif [[ "$changed" == true ]]; then
-        SUMMARY+=("AI API Keys|$CONFIGURATION_MESSAGE")
+    if [[ -n "${WITHOUTBG_SERVER_URL:-}" ]]; then
+        configured=true
+        rc=0
+        ai_write_shared_key "withoutbg-server-url" "$WITHOUTBG_SERVER_URL" || rc=$?
+        (( rc == 0 )) && changed=true
     else
-        SUMMARY+=("AI API Keys|⏭️ Already configured")
+        print_info "WITHOUTBG_SERVER_URL not set in config.sh — WithoutBG falls back to a local server."
+    fi
+
+    if [[ "$configured" == false ]]; then
+        SUMMARY+=("AI Settings|⏭️ Not configured")
+    elif [[ "$changed" == true ]]; then
+        SUMMARY+=("AI Settings|$CONFIGURATION_MESSAGE")
+    else
+        SUMMARY+=("AI Settings|⏭️ Already configured")
     fi
 }
 

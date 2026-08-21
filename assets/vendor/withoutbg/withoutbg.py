@@ -17,11 +17,12 @@
 # License: GNU General Public License v3 or later
 # <https://www.gnu.org/licenses/>
 #
-# gimp-setup patch (see PATCHES.md): targets the self-hosted WithoutBG API
-# at http://127.0.0.1:8000 — multipart upload to
-# /api/remove-background, health at /api/health, and a local RGBA-cutout →
-# grayscale-matte conversion, since that API returns the cutout instead of
-# the matte the upstream plug-in expects.
+# gimp-setup patch (see PATCHES.md): targets a self-hosted WithoutBG API
+# whose address comes from configuration (see SERVER_URL below) instead of
+# being hard-coded — multipart upload to /api/remove-background, health at
+# /api/health, and a local RGBA-cutout → grayscale-matte conversion, since
+# that API returns the cutout instead of the matte the upstream plug-in
+# expects.
 
 import gi
 gi.require_version('Gimp',   '3.0')
@@ -40,7 +41,49 @@ import urllib.error
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-SERVER_URL = "http://127.0.0.1:8000"
+# Upstream default: a WithoutBG server running locally (Docker or Mac app).
+DEFAULT_SERVER_URL = "http://127.0.0.1:8000"
+
+# Written by gimp-setup from WITHOUTBG_SERVER_URL in config.sh, on the host
+# and inside the GIMP Flatpak sandbox.
+SERVER_URL_FILE = "withoutbg-server-url"
+
+
+def _shared_config_paths(name):
+    """Candidate paths for a gimp-setup shared config file."""
+    home = os.path.expanduser("~")
+    xdg = os.environ.get("XDG_CONFIG_HOME", os.path.join(home, ".config"))
+    return [
+        os.path.join(home, ".config", "PhotoGIMP", name),
+        os.path.join(xdg, "PhotoGIMP", name),
+    ]
+
+
+def _read_shared_config(name):
+    """Read a gimp-setup shared config file, or None when unset."""
+    for path in _shared_config_paths(name):
+        try:
+            with open(path, encoding="utf-8") as f:
+                value = f.read().strip()
+            if value:
+                return value
+        except OSError:
+            continue
+    return None
+
+
+def _default_server_url():
+    """
+    Resolve the server address: the WITHOUTBG_SERVER_URL environment
+    variable, then the shared config file written by gimp-setup, then the
+    upstream local-server default. The dialog can still override it per run.
+    """
+    return (os.environ.get("WITHOUTBG_SERVER_URL")
+            or _read_shared_config(SERVER_URL_FILE)
+            or DEFAULT_SERVER_URL)
+
+
+SERVER_URL = _default_server_url()
 
 # The server downsamples input so the longest side is at most this many pixels.
 # We match that locally before POSTing to avoid 413 payloads and to keep the
@@ -505,7 +548,7 @@ class WithoutBGPlugin(Gimp.PlugIn):
 
         proc.add_string_argument(
             'server-url', 'Server URL',
-            'URL of the local WithoutBG server (default port 8000)',
+            'URL of the WithoutBG server (from WITHOUTBG_SERVER_URL or ~/.config/PhotoGIMP/withoutbg-server-url)',
             SERVER_URL,
             GObject.ParamFlags.READWRITE,
         )

@@ -36,3 +36,15 @@ GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 # a key set in GIMP via Filters > AI > Settings takes precedence.
 #
 OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+
+#
+# Address of the WithoutBG server used by the WithoutBG plug-in
+# (Tools > WithoutBG > Remove Background).
+#
+# Point it at your own self-hosted instance, or leave the default to use a
+# WithoutBG server running locally (Docker or the Mac app).
+#
+# The setup saves it to ~/.config/PhotoGIMP/withoutbg-server-url (host and
+# Flatpak sandbox copies); the plug-in dialog can still override it per run.
+#
+WITHOUTBG_SERVER_URL="${WITHOUTBG_SERVER_URL:-http://127.0.0.1:8000}"

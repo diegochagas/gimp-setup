@@ -7,11 +7,14 @@ notice kept in the file header).
 `withoutbg.py` carries the following gimp-setup patches (grep for
 `gimp-setup patch`):
 
-1. **`SERVER_URL` points to the self-hosted instance**
-   `http://127.0.0.1:8000` (upstream default is a local
-   Docker/Mac server on `http://127.0.0.1:8000`). The URL can still be
-   overridden per run in the plug-in dialog.
-2. **API layout adapted to that instance** (service `withoutbg-api`):
+1. **`SERVER_URL` is resolved from configuration** — the
+   `WITHOUTBG_SERVER_URL` environment variable, then
+   `~/.config/PhotoGIMP/withoutbg-server-url` (written by the setup from
+   `config.sh`), then the upstream local Docker/Mac default
+   `http://127.0.0.1:8000`. Upstream hard-codes the local default. The
+   URL can still be overridden per run in the plug-in dialog.
+2. **API layout adapted to the self-hosted instance** (service
+   `withoutbg-api`):
    - health check at `GET /api/health` (upstream: `/health`),
    - removal via **multipart** `file` upload to
      `POST /api/remove-background` (upstream: raw `image/png` body to
