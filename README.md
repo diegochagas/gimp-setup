@@ -35,6 +35,17 @@ Each run writes a log to `logs/`.
 `curl`, `unzip`, `jq`, `git`, `flatpak` and `python3` must be available.
 No `sudo` is required — everything installs to Flatpak and the user home.
 
+**Minimum hardware:** this installs on top of whatever machine already
+runs Flatpak, so there's no separate hardware bar beyond what GIMP itself
+needs — roughly 4 GB RAM (8 GB+ more comfortable once G'MIC,
+Resynthesizer and the LinuxBeaver GEGL filters are all in play on large
+images), a 64-bit CPU, and a couple of GB of free disk for GIMP plus the
+plug-ins/brushes/presets this script adds. None of the AI plug-ins run
+inference locally: WithoutBG needs a reachable server (local Docker/Mac
+app by default, per `WITHOUTBG_SERVER_URL`), and Generative Fill/AI
+Remove Selection call OpenAI, Gemini or your own SD WebUI over the
+network — so there's no local GPU/VRAM requirement from this repo.
+
 ### Configuration
 
 Optional. Copy the example file and fill in your values:
