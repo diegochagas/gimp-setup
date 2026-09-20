@@ -25,18 +25,27 @@
 #     copy of lukaso/gimp-ai — see
 #     assets/vendor/gimp-ai-plugin/PATCHES.md.
 #     Providers: OpenAI (default),
-#     Gemini, SD WebUI.
+#     Gemini, ComfyUI (local), SD WebUI.
 #
 #   AI Remove Selection
 #     Filters > AI > Remove Selection (AI)
 #     Photoshop-style Remove tool:
 #     select (or Quick Mask paint) an
 #     object and it is removed. Backends:
-#     Gemini, IOPaint (local), SD WebUI.
+#     Gemini, ComfyUI (local), IOPaint
+#     (local), SD WebUI.
+#
+#   ComfyUI client
+#     assets/plug-ins/comfyui/comfyui_client.py
+#     is installed next to both plug-ins
+#     above: fully local FLUX.2 klein /
+#     Qwen-Image-Edit through a running
+#     ComfyUI server.
 #
 #   Shared settings
 #     GEMINI_API_KEY / OPENAI_API_KEY /
-#     WITHOUTBG_SERVER_URL from config.sh
+#     WITHOUTBG_SERVER_URL / COMFYUI_URL
+#     from config.sh
 #     are written to ~/.config/PhotoGIMP/
 #     on the host AND inside the GIMP
 #     Flatpak sandbox
@@ -57,6 +66,9 @@ FEATURE_PRIORITY=60
 
 # Profiles are resolved once in feature_install.
 AI_PROFILES=()
+
+# ComfyUI client module, installed next to every plug-in that imports it.
+AI_COMFYUI_CLIENT="$ASSETS_DIR/plug-ins/comfyui/comfyui_client.py"
 
 ########################################
 # Copies plug-in files into every GIMP
@@ -226,6 +238,7 @@ ai_install_generative_fill() {
         "$vendor_dir/gimp-ai-plugin.py"
         "$vendor_dir/coordinate_utils.py"
         "$vendor_dir/ai_providers.py"
+        "$AI_COMFYUI_CLIENT"
     )
 
     local src
@@ -255,20 +268,26 @@ ai_install_generative_fill() {
 # Photoshop-style Remove tool.
 ########################################
 ai_install_remove_selection() {
-    local src="$ASSETS_DIR/plug-ins/ai-remove-selection/ai-remove-selection.py"
+    local sources=(
+        "$ASSETS_DIR/plug-ins/ai-remove-selection/ai-remove-selection.py"
+        "$AI_COMFYUI_CLIENT"
+    )
 
-    if ! file_exists "$src"; then
-        print_info "❌ Plug-in source not found at $src"
-        SUMMARY+=("AI Remove Selection|❌ Missing assets")
-        return
-    fi
+    local src
+    for src in "${sources[@]}"; do
+        if ! file_exists "$src"; then
+            print_info "❌ Plug-in source not found at $src"
+            SUMMARY+=("AI Remove Selection|❌ Missing assets")
+            return
+        fi
+    done
 
     print_step "Installing AI Remove Selection..."
 
     # Replaces the old photogimp-ai plug-in (its Generative Fill now
     # lives in the GIMP AI Plugin above).
     local rc=0
-    ai_install_plugin "ai-remove-selection" "photogimp-ai" "$src" || rc=$?
+    ai_install_plugin "ai-remove-selection" "photogimp-ai" "${sources[@]}" || rc=$?
 
     if (( rc == 0 )); then
         SUMMARY+=("AI Remove Selection|$INSTALLATION_MESSAGE")
@@ -310,6 +329,14 @@ ai_configure_keys() {
         (( rc == 0 )) && changed=true
     else
         print_info "WITHOUTBG_SERVER_URL not set in config.sh — WithoutBG falls back to a local server."
+    fi
+
+    # Optional: without it the plug-ins use ComfyUI's default address.
+    if [[ -n "${COMFYUI_URL:-}" ]]; then
+        configured=true
+        rc=0
+        ai_write_shared_key "comfyui-url" "$COMFYUI_URL" || rc=$?
+        (( rc == 0 )) && changed=true
     fi
 
     if [[ "$configured" == false ]]; then

@@ -48,3 +48,17 @@ OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 # Flatpak sandbox copies); the plug-in dialog can still override it per run.
 #
 WITHOUTBG_SERVER_URL="${WITHOUTBG_SERVER_URL:-http://127.0.0.1:8000}"
+
+#
+# Address of the ComfyUI server used by the fully local AI backends
+# (Filters > AI > Remove Selection / Generative Fill / Image Generator
+# with a "ComfyUI" backend or provider: FLUX.2 klein or Qwen-Image-Edit).
+#
+# Leave empty to use ComfyUI's default address on this machine. ComfyUI
+# must be running when the tools are used; see docs/AI_PLUGINS.md for the
+# model files it needs.
+#
+# The setup saves it to ~/.config/PhotoGIMP/comfyui-url (host and Flatpak
+# sandbox copies); Filters > AI > Settings can still override it.
+#
+COMFYUI_URL="${COMFYUI_URL:-}"

@@ -40,7 +40,8 @@ from coordinate_utils import (
 )
 
 # gimp-setup patch: multi-provider backends (Gemini / Nano Banana,
-# Stable Diffusion WebUI) live in ai_providers.py next to this file.
+# local ComfyUI, Stable Diffusion WebUI) live in ai_providers.py next to
+# this file.
 import ai_providers
 
 
@@ -216,7 +217,7 @@ class GimpAIPlugin(Gimp.PlugIn):
         return self.config.get("last_prompt", "")
 
     def _get_provider(self):
-        """Active AI provider: openai (default), gemini or sdwebui."""
+        """Active AI provider: openai (default) or any ai_providers.PROVIDERS id."""
         provider = (self.config or {}).get("provider", "openai")
         return provider if provider in ai_providers.PROVIDERS else "openai"
 
@@ -1043,6 +1044,16 @@ class GimpAIPlugin(Gimp.PlugIn):
             gemini_entry.set_visibility(False)
             provider_box.pack_start(gemini_entry, False, False, 0)
 
+            comfyui_label = Gtk.Label(
+                label="ComfyUI URL (local, must be running):"
+            )
+            comfyui_label.set_halign(Gtk.Align.START)
+            provider_box.pack_start(comfyui_label, False, False, 0)
+
+            comfyui_entry = Gtk.Entry()
+            comfyui_entry.set_text(ai_providers.get_comfyui_url(self.config))
+            provider_box.pack_start(comfyui_entry, False, False, 0)
+
             sdwebui_label = Gtk.Label(
                 label="Stable Diffusion WebUI URL (local, needs --api):"
             )
@@ -1159,6 +1170,11 @@ class GimpAIPlugin(Gimp.PlugIn):
                 if new_gemini_key:
                     self.config.setdefault("gemini", {})["api_key"] = new_gemini_key
                     print("DEBUG: Gemini API key updated")
+                # Only an address typed here is stored, so the shared
+                # comfyui-url file keeps working until it is overridden.
+                new_comfyui_url = comfyui_entry.get_text().strip().rstrip("/")
+                if new_comfyui_url and new_comfyui_url != ai_providers.get_comfyui_url(self.config):
+                    self.config.setdefault("comfyui", {})["url"] = new_comfyui_url
                 new_sdwebui_url = sdwebui_entry.get_text().strip()
                 if new_sdwebui_url:
                     self.config.setdefault("sdwebui", {})["url"] = new_sdwebui_url
@@ -1673,6 +1689,11 @@ class GimpAIPlugin(Gimp.PlugIn):
 
         print(f"DEBUG: Starting threaded {operation_name}...")
 
+        # gimp-setup patch: local models need far longer than an API call.
+        max_wait_time = ai_providers.max_wait_seconds(
+            self._get_provider(), max_wait_time
+        )
+
         # Shared storage for results
         result = {
             "success": False,
@@ -1726,6 +1747,8 @@ class GimpAIPlugin(Gimp.PlugIn):
                 print(f"DEBUG: {operation_name} cancelled by user")
                 if progress_label:
                     self._update_progress(progress_label, "❌ Operation cancelled")
+                # gimp-setup patch: stop the job on a local server too.
+                ai_providers.cancel(self._get_provider(), self.config)
                 result["success"] = False
                 result["message"] = "Operation cancelled by user"
                 break
@@ -2014,6 +2037,8 @@ class GimpAIPlugin(Gimp.PlugIn):
             pad_left, pad_top, pad_right, pad_bottom = padding_info["padding"]
 
             # Determine the correct base size for mask creation
+            # gimp-setup patch: where the mask's origin sits in the image.
+            mask_origin_x = mask_origin_y = 0
             if context_info.get("mode") == "full":
                 # Full image mode: create mask at full image size
                 mask_base_width = image.get_width()
@@ -2024,16 +2049,31 @@ class GimpAIPlugin(Gimp.PlugIn):
             else:
                 # Focused/contextual mode: create mask at extract region size
                 extract_region = context_info["extract_region"]
+                mask_origin_x, mask_origin_y = extract_region[0], extract_region[1]
                 mask_base_width = extract_region[2]
                 mask_base_height = extract_region[3]
                 print(
                     f"DEBUG: Creating mask at extract region size {mask_base_width}x{mask_base_height}, then scaling like image"
                 )
 
-            # Use the EXISTING working mask creation logic, but at correct base size
-            mask_image = Gimp.Image.new(
-                mask_base_width, mask_base_height, Gimp.ImageBaseType.RGB
-            )
+            # gimp-setup patch: build the mask with plain GIMP calls on a
+            # cropped duplicate of the image. Upstream composited the
+            # selection channel into a new image with GEGL, untranslated:
+            # the mask came out empty (nothing to edit) unless the extract
+            # region started at the image's top-left corner. Online
+            # providers repaint loosely and hid it; a local inpainter
+            # given an empty mask returns the input unchanged. A duplicate
+            # keeps the selection, and cropping keeps it aligned.
+            mask_image = image.duplicate()
+            if context_info.get("mode") != "full":
+                mask_image.crop(
+                    mask_base_width, mask_base_height, mask_origin_x, mask_origin_y
+                )
+            if mask_image.get_base_type() != Gimp.ImageBaseType.RGB:
+                mask_image.convert_rgb()
+            if mask_image.get_precision() != Gimp.Precision.U8_NON_LINEAR:
+                mask_image.convert_precision(Gimp.Precision.U8_NON_LINEAR)
+
             mask_layer = Gimp.Layer.new(
                 mask_image,
                 "selection_mask",
@@ -2044,62 +2084,26 @@ class GimpAIPlugin(Gimp.PlugIn):
                 Gimp.LayerMode.NORMAL,
             )
             mask_image.insert_layer(mask_layer, None, 0)
+            for other_layer in mask_image.get_layers():
+                if other_layer.get_id() != mask_layer.get_id():
+                    mask_image.remove_layer(other_layer)
 
-            # Fill with black (preserve areas)
+            # Black = preserve; the selection is cleared to transparent =
+            # edit (OpenAI mask semantics).
             from gi.repository import Gegl
 
-            black_color = Gegl.Color.new("black")
-            Gimp.context_set_foreground(black_color)
-            mask_layer.edit_fill(Gimp.FillType.FOREGROUND)
-
-            # Copy selection shape exactly as the working code does
-            selection_buffer = selection_channel.get_buffer()
-            mask_shadow_buffer = mask_layer.get_shadow_buffer()
-
-            # Use the WORKING Gegl approach from the existing code
-            graph = Gegl.Node()
-
-            mask_source = graph.create_child("gegl:buffer-source")
-            mask_source.set_property("buffer", mask_layer.get_buffer())
-
-            selection_source = graph.create_child("gegl:buffer-source")
-            selection_source.set_property("buffer", selection_buffer)
-
-            composite = graph.create_child("gegl:over")
-            output = graph.create_child("gegl:write-buffer")
-            output.set_property("buffer", mask_shadow_buffer)
-
-            mask_source.link(composite)
-            selection_source.connect_to("output", composite, "aux")
-            composite.link(output)
-            output.process()
-
-            mask_shadow_buffer.flush()
-            mask_layer.merge_shadow(True)
-            mask_layer.update(0, 0, mask_base_width, mask_base_height)
-
-            # Make white areas transparent (WORKING code)
-            transparency_graph = Gegl.Node()
-            layer_buffer = mask_layer.get_buffer()
-            shadow_buffer = mask_layer.get_shadow_buffer()
-
-            buffer_source = transparency_graph.create_child("gegl:buffer-source")
-            buffer_source.set_property("buffer", layer_buffer)
-
-            color_to_alpha = transparency_graph.create_child("gegl:color-to-alpha")
-            white_color = Gegl.Color.new("white")
-            color_to_alpha.set_property("color", white_color)
-
-            buffer_write = transparency_graph.create_child("gegl:write-buffer")
-            buffer_write.set_property("buffer", shadow_buffer)
-
-            buffer_source.link(color_to_alpha)
-            color_to_alpha.link(buffer_write)
-            buffer_write.process()
-
-            shadow_buffer.flush()
-            mask_layer.merge_shadow(True)
-            mask_layer.update(0, 0, mask_base_width, mask_base_height)
+            mask_selection = Gimp.Selection.save(mask_image)
+            Gimp.context_push()
+            try:
+                Gimp.Selection.none(mask_image)
+                Gimp.context_set_foreground(Gegl.Color.new("black"))
+                mask_layer.edit_fill(Gimp.FillType.FOREGROUND)
+                mask_image.select_item(Gimp.ChannelOps.REPLACE, mask_selection)
+                mask_layer.edit_clear()
+                Gimp.Selection.none(mask_image)
+            finally:
+                Gimp.context_pop()
+            mask_image.remove_channel(mask_selection)
 
             print(
                 f"DEBUG: Created mask at original size with transparent selection areas"

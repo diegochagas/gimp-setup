@@ -15,6 +15,19 @@
 #            Key from https://aistudio.google.com/apikey, stored in
 #            ~/.config/PhotoGIMP/gemini-api-key (host and/or Flatpak
 #            sandbox copy) or the GEMINI_API_KEY environment variable.
+#   comfyui-klein / comfyui-qwen
+#            Local ComfyUI server running FLUX.2 klein (fast) or
+#            Qwen-Image-Edit (slower, cleaner on structured backgrounds),
+#            through comfyui_client.py next to this file. No key needed.
+#            Address: COMFYUI_URL or ~/.config/PhotoGIMP/comfyui-url
+#            (default http://127.0.0.1:8188). ComfyUI must be running.
+#            "What is selected" picks how the model is shown the area:
+#            an object is hidden from it (or FLUX.2 klein redraws it);
+#            text or marks over a texture stay visible, so the real
+#            texture between the strokes is continued (a hidden area
+#            comes back as a flat patch on halftone scans). Auto hides
+#            it first and redoes the job the other way when the fill
+#            comes back flat.
 #   iopaint  Local inpainting (LaMa model), no key needed:
 #            pipx install iopaint && iopaint start --model=lama --port=8080
 #            Serves on http://127.0.0.1:8080 (override: PHOTOGIMP_IOPAINT_URL)
@@ -42,6 +55,8 @@ from gi.repository import Gimp
 gi.require_version('Gegl', '0.4')
 from gi.repository import Gegl
 from gi.repository import GLib, GObject, Gio
+
+import comfyui_client
 
 GEMINI_MODEL = os.environ.get('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash-image')
 GEMINI_URL = ('https://generativelanguage.googleapis.com/v1beta/models/'
@@ -163,6 +178,21 @@ def call_gemini(context_png, mask_png):
                        + raw.decode('utf-8', 'replace')[:800])
 
 
+COMFYUI_MODES = {'auto': 'auto', 'object': 'hidden', 'texture': 'see_through'}
+
+
+def call_comfyui(model, context_png, mask_png, target):
+    def progress(elapsed):
+        Gimp.progress_set_text(
+            'ComfyUI (%s) is working... %d s — the first run loads the '
+            'model and takes longer' % (comfyui_client.MODELS[model], elapsed))
+        Gimp.progress_pulse()
+
+    return comfyui_client.inpaint(model, context_png, mask_png, None,
+                                  progress=progress,
+                                  mode=COMFYUI_MODES.get(target, 'auto'))
+
+
 def call_iopaint(context_png, mask_png):
     payload = {
         'image': base64.b64encode(context_png).decode(),
@@ -282,7 +312,7 @@ def _composite_result(image, result_bytes, cx, cy, cw, ch, tmpdir):
     return layer
 
 
-def _run_remove(image, backend, padding):
+def _run_remove(image, backend, padding, target):
     ok, non_empty, x1, y1, x2, y2 = Gimp.Selection.bounds(image)
     if not non_empty:
         raise RuntimeError(
@@ -305,7 +335,10 @@ def _run_remove(image, backend, padding):
 
     Gimp.progress_set_text('Waiting for %s...' % backend)
     Gimp.progress_pulse()
-    if backend == 'iopaint':
+    if backend.startswith('comfyui-'):
+        result = call_comfyui(backend[len('comfyui-'):], ctx_png, mask_png,
+                              target)
+    elif backend == 'iopaint':
         result = call_iopaint(ctx_png, mask_png)
     elif backend == 'sdwebui':
         result = call_sdwebui(ctx_png, mask_png, cw, ch)
@@ -350,7 +383,8 @@ def run(procedure, run_mode, image, drawables, config, data):
     try:
         _run_remove(image,
                     config.get_property('backend'),
-                    config.get_property('padding'))
+                    config.get_property('padding'),
+                    config.get_property('target'))
     except Exception as e:
         return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR,
                                            GLib.Error(str(e)))
@@ -383,11 +417,28 @@ class AiRemoveSelection(Gimp.PlugIn):
 
         backend = Gimp.Choice.new()
         backend.add('gemini', 0, 'Gemini / Nano Banana (online, free key)', '')
+        backend.add('comfyui-klein', 3,
+                    'ComfyUI - FLUX.2 klein (local, fast)', '')
+        backend.add('comfyui-qwen', 4,
+                    'ComfyUI - Qwen-Image-Edit (local, slower)', '')
         backend.add('iopaint', 1, 'IOPaint - LaMa (local)', '')
         backend.add('sdwebui', 2, 'Stable Diffusion WebUI (local)', '')
         procedure.add_choice_argument(
             'backend', '_Backend', 'AI service to use', backend, 'gemini',
             GObject.ParamFlags.READWRITE)
+        target = Gimp.Choice.new()
+        target.add('auto', 2, 'Auto (retries as texture if the fill is flat)',
+                   '')
+        target.add('object', 0, 'An object (photo)', '')
+        target.add('texture', 1,
+                   'Text or marks over a texture (scan, print)', '')
+        procedure.add_choice_argument(
+            'target', '_What is selected (ComfyUI only)',
+            'ComfyUI backends: an object is hidden from the AI so it is '
+            'not redrawn; text or marks over a texture stay visible so '
+            'the texture under them is continued; Auto tries the first '
+            'and falls back to the second',
+            target, 'auto', GObject.ParamFlags.READWRITE)
         procedure.add_int_argument(
             'padding', 'Context _padding (px)',
             'Surrounding pixels sent to the AI for context',

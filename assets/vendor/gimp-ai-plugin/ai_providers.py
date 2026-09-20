@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Multi-provider backends for the GIMP AI Plugin (gimp-setup patch).
 
-Adds Google Gemini ("Nano Banana") and Stable Diffusion WebUI (local
-AUTOMATIC1111) as alternatives to OpenAI for Generative Fill (inpainting)
-and Image Generation. Pure standard library, no GIMP imports, so it can
-be unit-tested outside GIMP.
+Adds Google Gemini ("Nano Banana"), ComfyUI (local FLUX.2 klein and
+Qwen-Image-Edit, through comfyui_client.py next to this file) and Stable
+Diffusion WebUI (local AUTOMATIC1111) as alternatives to OpenAI for
+Generative Fill (inpainting) and Image Generation. Pure standard library,
+no GIMP imports, so it can be unit-tested outside GIMP.
 
 Both entry points mirror the plugin's OpenAI call contracts:
 
@@ -35,11 +36,18 @@ import urllib.error
 import urllib.request
 import zlib
 
+import comfyui_client
+
 PROVIDERS = {
     "openai": "OpenAI gpt-image-1 (online, paid key)",
     "gemini": "Google Gemini / Nano Banana (online, free key)",
+    "comfyui-klein": "ComfyUI - FLUX.2 klein (local, fast)",
+    "comfyui-qwen": "ComfyUI - Qwen-Image-Edit (local, slower)",
     "sdwebui": "Stable Diffusion WebUI (local)",
 }
+
+# provider id -> comfyui_client model
+COMFYUI_MODELS = {"comfyui-klein": "klein", "comfyui-qwen": "qwen"}
 
 GEMINI_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 GEMINI_URL = (
@@ -101,10 +109,34 @@ def get_sdwebui_url(config):
             or SDWEBUI_DEFAULT_URL)
 
 
+def get_comfyui_url(config):
+    return comfyui_client.get_url((config or {}).get("comfyui", {}).get("url"))
+
+
+def max_wait_seconds(provider, default):
+    """How long the plugin waits for `provider` before giving up.
+
+    Local ComfyUI models can take many minutes on their first run (the
+    model is loaded from disk and partly kept in system RAM on small
+    GPUs), far longer than an online API call.
+    """
+    if provider in COMFYUI_MODELS:
+        return comfyui_client.TIMEOUT
+    return default
+
+
+def cancel(provider, config):
+    """Stop a request the user cancelled, where the provider supports it."""
+    if provider in COMFYUI_MODELS:
+        comfyui_client.cancel(get_comfyui_url(config))
+
+
 def provider_key(provider, config):
     """Credential (or endpoint) that lets `provider` run; None if missing."""
     if provider == "gemini":
         return get_gemini_key(config)
+    if provider in COMFYUI_MODELS:
+        return get_comfyui_url(config)
     if provider == "sdwebui":
         return get_sdwebui_url(config)
     return get_openai_key(config)
@@ -116,6 +148,8 @@ def missing_key_message(provider):
                 "https://aistudio.google.com/apikey and set it in "
                 "Filters > AI > Settings, or save it to "
                 "~/.config/PhotoGIMP/gemini-api-key")
+    if provider in COMFYUI_MODELS:
+        return comfyui_client.unreachable_message(comfyui_client.DEFAULT_URL)
     if provider == "sdwebui":
         return ("Stable Diffusion WebUI is not reachable. Launch "
                 "AUTOMATIC1111 with --api (default http://127.0.0.1:7860).")
@@ -400,6 +434,11 @@ def generate_image(provider, config, prompt, size="auto"):
 
         if provider == "gemini":
             data = _gemini_generate(prompt, credential)
+        elif provider in COMFYUI_MODELS:
+            # Text-to-image always runs on FLUX.2 klein: Qwen-Image-Edit
+            # is an editing model.
+            width, height = _parse_size(size, (1024, 1024))
+            data = comfyui_client.generate(prompt, width, height, credential)
         elif provider == "sdwebui":
             width, height = _parse_size(size, (1024, 1024))
             data = _sdwebui_txt2img(prompt, credential, width, height)
@@ -427,6 +466,9 @@ def edit_image(provider, config, image_b64, mask_png, prompt):
 
         if provider == "gemini":
             data = _gemini_edit(image_png, mask_bw, prompt, credential)
+        elif provider in COMFYUI_MODELS:
+            data = comfyui_client.inpaint(COMFYUI_MODELS[provider], image_png,
+                                          mask_bw, prompt, credential)
         elif provider == "sdwebui":
             data = _sdwebui_img2img(image_png, mask_bw, prompt, credential)
         else:
