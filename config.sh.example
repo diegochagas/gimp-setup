@@ -15,29 +15,6 @@
 ########################################
 
 #
-# Google Gemini API key, shared by the AI plug-ins
-# (Filters > AI > Remove Selection / Generative Fill / Image Generator
-# with the Gemini provider).
-#
-# Get a free key at https://aistudio.google.com/apikey
-#
-# Leave empty to configure the backend later. The setup saves it to
-# ~/.config/PhotoGIMP/gemini-api-key (host and Flatpak sandbox copies).
-#
-GEMINI_API_KEY="${GEMINI_API_KEY:-}"
-
-#
-# OpenAI API key used by the GIMP AI Plugin
-# (Filters > AI > Generative Fill / Image Generator / Layer Composite
-# with the OpenAI provider — paid, from platform.openai.com/api-keys).
-#
-# Leave empty to configure it later. The setup saves it to
-# ~/.config/PhotoGIMP/openai-api-key (host and Flatpak sandbox copies);
-# a key set in GIMP via Filters > AI > Settings takes precedence.
-#
-OPENAI_API_KEY="${OPENAI_API_KEY:-}"
-
-#
 # Address of the WithoutBG server used by the WithoutBG plug-in
 # (Tools > WithoutBG > Remove Background).
 #
@@ -50,13 +27,54 @@ OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 WITHOUTBG_SERVER_URL="${WITHOUTBG_SERVER_URL:-http://127.0.0.1:8000}"
 
 #
-# Address of the ComfyUI server used by the fully local AI backends
-# (Filters > AI > Remove Selection / Generative Fill / Image Generator
-# with a "ComfyUI" backend or provider: FLUX.2 klein or Qwen-Image-Edit).
+# ComfyUI, the local AI models behind GIMP's AI tools
+# (Filters > AI > Remove Selection / Generative Fill / Image Generator:
+# FLUX.2 klein or Qwen-Image-Edit, fully local, no account or key).
 #
-# Leave empty to use ComfyUI's default address on this machine. ComfyUI
-# must be running when the tools are used; see docs/AI_PLUGINS.md for the
-# model files it needs.
+# COMFYUI_DIR is where ComfyUI, its Python environment and its models are
+# installed, e.g. a directory on a larger data disk: the models are tens of
+# GB and the feature wants about 45 GB free. Needs an NVIDIA GPU with its
+# driver installed (a 6 GB card is enough; what does not fit is kept in RAM).
+#
+# Leave empty to skip installing ComfyUI (the AI tools then need a ComfyUI
+# you run yourself, at COMFYUI_URL).
+#
+COMFYUI_DIR="${COMFYUI_DIR:-}"
+
+#
+# Which model sets to download, comma separated (see
+# assets/comfyui/models.tsv):
+#
+#   qwen  - Qwen-Image-Edit-2511, ~22 GB. Best quality;
+#           what comic-skills uses to erase text over art.
+#   klein - FLUX.2 klein 4B, ~12 GB. Faster, lower quality;
+#           the only one that generates images from text.
+#
+# Both by default. Leave empty to install ComfyUI without any model.
+#
+COMFYUI_MODEL_SETS="${COMFYUI_MODEL_SETS-qwen,klein}"
+
+#
+# Port the ComfyUI user service listens on (127.0.0.1 only).
+#
+COMFYUI_PORT="${COMFYUI_PORT:-8188}"
+
+#
+# Where ComfyUI, its GGUF node and PyTorch come from. The defaults are the
+# upstream repositories and the CUDA 12.8 build of PyTorch; override to use
+# a fork or another CUDA version.
+#
+COMFYUI_REPO="${COMFYUI_REPO:-https://github.com/comfyanonymous/ComfyUI.git}"
+COMFYUI_GGUF_NODE_REPO="${COMFYUI_GGUF_NODE_REPO:-https://github.com/city96/ComfyUI-GGUF.git}"
+COMFYUI_TORCH_INDEX_URL="${COMFYUI_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}"
+
+#
+# Address of the ComfyUI server used by the AI tools.
+#
+# Leave empty to use http://127.0.0.1:COMFYUI_PORT when COMFYUI_DIR is set,
+# or ComfyUI's default address on this machine otherwise. ComfyUI must be
+# running when the tools are used (`systemctl --user start comfyui`); see
+# docs/AI_PLUGINS.md for the model files it needs.
 #
 # The setup saves it to ~/.config/PhotoGIMP/comfyui-url (host and Flatpak
 # sandbox copies); Filters > AI > Settings can still override it.
