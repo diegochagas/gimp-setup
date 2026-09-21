@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Multi-provider backends for the GIMP AI Plugin (gimp-setup patch).
+"""Local ComfyUI backends for the GIMP AI Plugin (gimp-setup patch).
 
-Adds Google Gemini ("Nano Banana"), ComfyUI (local FLUX.2 klein and
-Qwen-Image-Edit, through comfyui_client.py next to this file) and Stable
-Diffusion WebUI (local AUTOMATIC1111) as alternatives to OpenAI for
+The only providers are the two fully local ComfyUI models (FLUX.2 klein
+and Qwen-Image-Edit, through comfyui_client.py next to this file) for
 Generative Fill (inpainting) and Image Generation. Pure standard library,
 no GIMP imports, so it can be unit-tested outside GIMP.
 
-Both entry points mirror the plugin's OpenAI call contracts:
+Both entry points keep the call contracts of the plugin's original
+online backend, so its compositing code is reused as-is:
 
     generate_image(provider, config, prompt, size)
         -> (success, message, png_bytes)
@@ -15,99 +15,38 @@ Both entry points mirror the plugin's OpenAI call contracts:
     edit_image(provider, config, image_b64, mask_png, prompt)
         -> (success, message, {"data": [{"b64_json": ...}]})
 
-The edit mask follows OpenAI semantics on input (transparent pixels mark
-the area to change); it is converted to the white-on-black mask that the
-other providers understand.
-
-API keys are looked up in the plugin config first, then environment
-variables, then the shared gimp-setup key files, which exist both on the
-host (~/.config/PhotoGIMP/) and inside the GIMP Flatpak sandbox
-(~/.var/app/org.gimp.GIMP/config/PhotoGIMP/, reached here through
-XDG_CONFIG_HOME).
+The edit mask arrives with the plugin's semantics (transparent pixels mark
+the area to change); it is converted to the white-on-black mask that
+comfyui_client understands.
 """
 
 import base64
-import json
-import os
-import re
 import struct
-import time
-import urllib.error
-import urllib.request
 import zlib
 
 import comfyui_client
 
 PROVIDERS = {
-    "openai": "OpenAI gpt-image-1 (online, paid key)",
-    "gemini": "Google Gemini / Nano Banana (online, free key)",
     "comfyui-klein": "ComfyUI - FLUX.2 klein (local, fast)",
     "comfyui-qwen": "ComfyUI - Qwen-Image-Edit (local, slower)",
-    "sdwebui": "Stable Diffusion WebUI (local)",
 }
+
+DEFAULT_PROVIDER = "comfyui-klein"
 
 # provider id -> comfyui_client model
 COMFYUI_MODELS = {"comfyui-klein": "klein", "comfyui-qwen": "qwen"}
 
-GEMINI_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    + GEMINI_MODEL + ":generateContent"
-)
-SDWEBUI_DEFAULT_URL = "http://127.0.0.1:7860"
 
-FILL_INSTRUCTION = (
-    "You are a photo editing engine. The first image is a photo. The second "
-    "image is a mask of the same size: the WHITE area marks the region to "
-    "edit. Inside that region only, do the following: {prompt}. Blend the "
-    "result seamlessly with the rest of the photo, matching its lighting, "
-    "colors, grain and perspective. Do not change anything outside the "
-    "white area. Return only the edited photo at the same size, with no "
-    "added text, borders or watermarks."
-)
+def normalize_provider(provider):
+    """`provider` if it is a known provider, else the default.
+
+    Settings saved by earlier versions may name a provider that no longer
+    exists (the online ones and Stable Diffusion WebUI were removed).
+    """
+    return provider if provider in PROVIDERS else DEFAULT_PROVIDER
 
 
-# --------------------------------------------------------------- key lookup
-
-def _shared_key_paths(name):
-    home = os.path.expanduser("~")
-    xdg = os.environ.get("XDG_CONFIG_HOME", os.path.join(home, ".config"))
-    return [
-        os.path.join(home, ".config", "PhotoGIMP", name),
-        os.path.join(xdg, "PhotoGIMP", name),
-    ]
-
-
-def read_shared_key(name):
-    """Read a key from the shared gimp-setup key files, if present."""
-    for path in _shared_key_paths(name):
-        try:
-            with open(path, encoding="utf-8") as f:
-                value = f.read().strip()
-            if value:
-                return value
-        except OSError:
-            continue
-    return None
-
-
-def get_openai_key(config):
-    key = (config or {}).get("openai", {}).get("api_key")
-    return key or os.environ.get("OPENAI_API_KEY") or read_shared_key(
-        "openai-api-key")
-
-
-def get_gemini_key(config):
-    key = (config or {}).get("gemini", {}).get("api_key")
-    return key or os.environ.get("GEMINI_API_KEY") or read_shared_key(
-        "gemini-api-key")
-
-
-def get_sdwebui_url(config):
-    url = (config or {}).get("sdwebui", {}).get("url")
-    return (url or os.environ.get("PHOTOGIMP_A1111_URL")
-            or SDWEBUI_DEFAULT_URL)
-
+# ---------------------------------------------------------------- endpoint
 
 def get_comfyui_url(config):
     return comfyui_client.get_url((config or {}).get("comfyui", {}).get("url"))
@@ -118,7 +57,7 @@ def max_wait_seconds(provider, default):
 
     Local ComfyUI models can take many minutes on their first run (the
     model is loaded from disk and partly kept in system RAM on small
-    GPUs), far longer than an online API call.
+    GPUs), far longer than the plugin's default wait.
     """
     if provider in COMFYUI_MODELS:
         return comfyui_client.TIMEOUT
@@ -126,36 +65,18 @@ def max_wait_seconds(provider, default):
 
 
 def cancel(provider, config):
-    """Stop a request the user cancelled, where the provider supports it."""
+    """Stop a request the user cancelled."""
     if provider in COMFYUI_MODELS:
         comfyui_client.cancel(get_comfyui_url(config))
 
 
 def provider_key(provider, config):
-    """Credential (or endpoint) that lets `provider` run; None if missing."""
-    if provider == "gemini":
-        return get_gemini_key(config)
-    if provider in COMFYUI_MODELS:
-        return get_comfyui_url(config)
-    if provider == "sdwebui":
-        return get_sdwebui_url(config)
-    return get_openai_key(config)
+    """Endpoint that lets `provider` run (the ComfyUI server address)."""
+    return get_comfyui_url(config)
 
 
 def missing_key_message(provider):
-    if provider == "gemini":
-        return ("No Gemini API key found. Create a free key at "
-                "https://aistudio.google.com/apikey and set it in "
-                "Filters > AI > Settings, or save it to "
-                "~/.config/PhotoGIMP/gemini-api-key")
-    if provider in COMFYUI_MODELS:
-        return comfyui_client.unreachable_message(comfyui_client.DEFAULT_URL)
-    if provider == "sdwebui":
-        return ("Stable Diffusion WebUI is not reachable. Launch "
-                "AUTOMATIC1111 with --api (default http://127.0.0.1:7860).")
-    return ("No OpenAI API key found. Create one at "
-            "https://platform.openai.com/api-keys and set it in "
-            "Filters > AI > Settings.")
+    return comfyui_client.unreachable_message(comfyui_client.DEFAULT_URL)
 
 
 # ------------------------------------------------------------- PNG helpers
@@ -265,11 +186,11 @@ def _encode_gray_png(width, height, gray_pixels):
             + chunk(b"IEND", b""))
 
 
-def openai_mask_to_bw(mask_png):
-    """Convert an OpenAI-style mask (transparent = edit) to white-on-black.
+def edit_mask_to_bw(mask_png):
+    """Convert the plugin's edit mask (transparent = edit) to white-on-black.
 
     Returns a grayscale PNG where WHITE marks the area to edit, which is
-    what Gemini instructions and SD WebUI inpainting expect.
+    what comfyui_client expects.
     """
     width, height, channels, pixels = _decode_png(mask_png)
     gray = bytearray(width * height)
@@ -282,137 +203,6 @@ def openai_mask_to_bw(mask_png):
         for i in range(width * height):
             gray[i] = 255 if pixels[i * channels] >= 128 else 0
     return _encode_gray_png(width, height, bytes(gray))
-
-
-# -------------------------------------------------------------- HTTP layer
-
-RATE_LIMIT_MESSAGE = (
-    "Gemini rate limit reached (HTTP 429). The free tier only allows a few "
-    "image requests per minute and per day. Wait a minute and try again, "
-    "check your quota at https://aistudio.google.com/usage, or switch the "
-    "provider in Filters > AI > Settings.")
-
-
-class HTTPCallError(RuntimeError):
-    """HTTP error with status code and body attached."""
-
-    def __init__(self, code, body, url):
-        super().__init__("HTTP %d from %s: %s" % (code, url, body[:300]))
-        self.code = code
-        self.body = body
-
-
-def _http_json(url, payload, headers, timeout=300):
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    for name, value in (headers or {}).items():
-        req.add_header(name, value)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as e:
-        try:
-            body = e.read().decode("utf-8", "replace")
-        except Exception:
-            body = ""
-        raise HTTPCallError(e.code, body, url)
-    except urllib.error.URLError as e:
-        raise RuntimeError("Could not reach %s (%s)" % (url, e.reason))
-
-
-def _retry_delay_seconds(body):
-    """Retry delay suggested by a Gemini 429 response, if any."""
-    match = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', body)
-    if match:
-        return float(match.group(1))
-    return None
-
-
-# ----------------------------------------------------------------- Gemini
-
-def _gemini_request(parts, api_key):
-    payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
-    }
-    raw = None
-    for attempt in (1, 2):
-        try:
-            raw = _http_json(GEMINI_URL, payload, {"x-goog-api-key": api_key})
-            break
-        except HTTPCallError as e:
-            if e.code == 429:
-                delay = _retry_delay_seconds(e.body)
-                if attempt == 1 and delay is not None and delay <= 35:
-                    time.sleep(delay)
-                    continue
-                raise RuntimeError(RATE_LIMIT_MESSAGE)
-            raise
-    reply = json.loads(raw)
-    for candidate in reply.get("candidates", []):
-        for part in candidate.get("content", {}).get("parts", []):
-            inline = part.get("inlineData") or part.get("inline_data")
-            if inline and inline.get("data"):
-                return base64.b64decode(inline["data"])
-    raise RuntimeError("Gemini returned no image. Reply: "
-                       + raw.decode("utf-8", "replace")[:500])
-
-
-def _gemini_generate(prompt, api_key):
-    return _gemini_request([{"text": prompt}], api_key)
-
-
-def _gemini_edit(image_png, mask_png, prompt, api_key):
-    parts = [
-        {"text": FILL_INSTRUCTION.format(prompt=prompt)},
-        {"inlineData": {"mimeType": "image/png",
-                        "data": base64.b64encode(image_png).decode()}},
-        {"inlineData": {"mimeType": "image/png",
-                        "data": base64.b64encode(mask_png).decode()}},
-    ]
-    return _gemini_request(parts, api_key)
-
-
-# ------------------------------------------------------------------ SD WebUI
-
-def _sdwebui_txt2img(prompt, url, width, height):
-    payload = {
-        "prompt": prompt,
-        "negative_prompt": "text, watermark, low quality",
-        "width": width,
-        "height": height,
-        "steps": 28,
-        "cfg_scale": 7,
-    }
-    raw = _http_json(url.rstrip("/") + "/sdapi/v1/txt2img", payload, {})
-    images = json.loads(raw).get("images")
-    if not images:
-        raise RuntimeError("Stable Diffusion WebUI returned no image.")
-    return base64.b64decode(images[0])
-
-
-def _sdwebui_img2img(image_png, mask_bw_png, prompt, url):
-    width, height = png_size(image_png)
-    payload = {
-        "init_images": [base64.b64encode(image_png).decode()],
-        "mask": base64.b64encode(mask_bw_png).decode(),
-        "prompt": prompt,
-        "negative_prompt": "text, watermark, low quality",
-        "denoising_strength": 0.9,
-        "inpainting_fill": 1,
-        "inpainting_mask_invert": 0,
-        "inpaint_full_res": False,
-        "width": width,
-        "height": height,
-        "steps": 28,
-        "cfg_scale": 7,
-    }
-    raw = _http_json(url.rstrip("/") + "/sdapi/v1/img2img", payload, {})
-    images = json.loads(raw).get("images")
-    if not images:
-        raise RuntimeError("Stable Diffusion WebUI returned no image.")
-    return base64.b64decode(images[0])
 
 
 # -------------------------------------------------------------- entry points
@@ -428,51 +218,34 @@ def _parse_size(size, default=(1024, 1024)):
 def generate_image(provider, config, prompt, size="auto"):
     """Text-to-image. Returns (success, message, png_bytes)."""
     try:
-        credential = provider_key(provider, config)
-        if not credential:
-            return False, missing_key_message(provider), None
+        provider = normalize_provider(provider)
+        url = provider_key(provider, config)
 
-        if provider == "gemini":
-            data = _gemini_generate(prompt, credential)
-        elif provider in COMFYUI_MODELS:
-            # Text-to-image always runs on FLUX.2 klein: Qwen-Image-Edit
-            # is an editing model.
-            width, height = _parse_size(size, (1024, 1024))
-            data = comfyui_client.generate(prompt, width, height, credential)
-        elif provider == "sdwebui":
-            width, height = _parse_size(size, (1024, 1024))
-            data = _sdwebui_txt2img(prompt, credential, width, height)
-        else:
-            return False, "generate_image() does not handle OpenAI", None
+        # Text-to-image always runs on FLUX.2 klein: Qwen-Image-Edit is an
+        # editing model.
+        width, height = _parse_size(size, (1024, 1024))
+        data = comfyui_client.generate(prompt, width, height, url)
         return True, "%s generation successful" % provider, data
     except Exception as e:  # noqa: BLE001 - reported to the GIMP dialog
         return False, str(e), None
 
 
 def edit_image(provider, config, image_b64, mask_png, prompt):
-    """Inpainting. Mask uses OpenAI semantics (transparent = edit).
+    """Inpainting. Mask: transparent = edit (see edit_mask_to_bw).
 
-    Returns (success, message, response_json) with an OpenAI-shaped
-    response so the plugin's compositing code can be reused as-is.
+    Returns (success, message, response_json) shaped like the plugin's
+    original online backend so its compositing code can be reused as-is.
     """
     try:
-        credential = provider_key(provider, config)
-        if not credential:
-            return False, missing_key_message(provider), None
+        provider = normalize_provider(provider)
+        url = provider_key(provider, config)
 
         image_png = (base64.b64decode(image_b64)
                      if isinstance(image_b64, str) else image_b64)
-        mask_bw = openai_mask_to_bw(mask_png)
+        mask_bw = edit_mask_to_bw(mask_png)
 
-        if provider == "gemini":
-            data = _gemini_edit(image_png, mask_bw, prompt, credential)
-        elif provider in COMFYUI_MODELS:
-            data = comfyui_client.inpaint(COMFYUI_MODELS[provider], image_png,
-                                          mask_bw, prompt, credential)
-        elif provider == "sdwebui":
-            data = _sdwebui_img2img(image_png, mask_bw, prompt, credential)
-        else:
-            return False, "edit_image() does not handle OpenAI", None
+        data = comfyui_client.inpaint(COMFYUI_MODELS[provider], image_png,
+                                      mask_bw, prompt, url)
 
         response = {"data": [{"b64_json": base64.b64encode(data).decode()}]}
         return True, "%s edit successful" % provider, response

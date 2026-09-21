@@ -20,30 +20,28 @@
 #   Generative Fill (GIMP AI Plugin)
 #     Filters > AI > Generative Fill
 #     Fills the selection from a text
-#     prompt (plus Image Generator and
-#     Layer Composite). Vendored patched
-#     copy of lukaso/gimp-ai — see
+#     prompt (plus Image Generator).
+#     Vendored patched copy of
+#     lukaso/gimp-ai — see
 #     assets/vendor/gimp-ai-plugin/PATCHES.md.
-#     Providers: OpenAI (default),
-#     Gemini, ComfyUI (local), SD WebUI.
+#     Fully local: FLUX.2 klein or
+#     Qwen-Image-Edit through ComfyUI.
 #
 #   AI Remove Selection
 #     Filters > AI > Remove Selection (AI)
 #     Photoshop-style Remove tool:
 #     select (or Quick Mask paint) an
-#     object and it is removed. Backends:
-#     Gemini, ComfyUI (local), IOPaint
-#     (local), SD WebUI.
+#     object and it is removed. Fully
+#     local: FLUX.2 klein or
+#     Qwen-Image-Edit through ComfyUI.
 #
 #   ComfyUI client
 #     assets/plug-ins/comfyui/comfyui_client.py
 #     is installed next to both plug-ins
-#     above: fully local FLUX.2 klein /
-#     Qwen-Image-Edit through a running
-#     ComfyUI server.
+#     above; the ComfyUI server itself is
+#     installed by features/comfyui.sh.
 #
 #   Shared settings
-#     GEMINI_API_KEY / OPENAI_API_KEY /
 #     WITHOUTBG_SERVER_URL / COMFYUI_URL
 #     from config.sh
 #     are written to ~/.config/PhotoGIMP/
@@ -52,6 +50,13 @@
 #     (~/.var/app/org.gimp.GIMP/config/),
 #     so the plug-ins find them in both
 #     worlds.
+#
+#   Online providers removed
+#     Earlier versions also offered
+#     OpenAI, Google Gemini and Stable
+#     Diffusion WebUI; the API keys they
+#     saved are removed again (see
+#     ai_remove_online_settings).
 #
 # See docs/AI_PLUGINS.md.
 #
@@ -145,13 +150,13 @@ ai_refresh_pluginrc() {
 }
 
 ########################################
-# Writes a shared setting (API key or
-# server URL) to the shared config files
+# Writes a shared setting (server URL)
+# to the shared config files
 # on the host and inside the GIMP Flatpak
 # sandbox.
 #
 # Arguments:
-#   $1 - File name (e.g. gemini-api-key)
+#   $1 - File name (e.g. comfyui-url)
 #   $2 - Value
 #
 # Returns:
@@ -290,6 +295,7 @@ ai_install_remove_selection() {
     ai_install_plugin "ai-remove-selection" "photogimp-ai" "${sources[@]}" || rc=$?
 
     if (( rc == 0 )); then
+        ai_refresh_pluginrc
         SUMMARY+=("AI Remove Selection|$INSTALLATION_MESSAGE")
     else
         SUMMARY+=("AI Remove Selection|⏭️ Already installed")
@@ -297,30 +303,83 @@ ai_install_remove_selection() {
 }
 
 ########################################
+# Removes what earlier versions saved for
+# the online providers that are gone
+# (OpenAI, Google Gemini, Stable Diffusion
+# WebUI): their shared API key files, and
+# the key and settings kept in the GIMP AI
+# Plugin's own config.json.
+#
+# Only these leftovers are touched; every
+# other setting in config.json stays.
+########################################
+ai_remove_online_settings() {
+    local removed=false
+    local dir file name
+
+    local key_dirs=("$HOME/.config/PhotoGIMP")
+    if [[ -d "$HOME/.var/app/org.gimp.GIMP" ]]; then
+        key_dirs+=("$HOME/.var/app/org.gimp.GIMP/config/PhotoGIMP")
+    fi
+
+    for dir in "${key_dirs[@]}"; do
+        for name in gemini-api-key openai-api-key; do
+            file="$dir/$name"
+            if file_exists "$file"; then
+                run rm -f "$file"
+                removed=true
+            fi
+        done
+    done
+
+    for dir in "${AI_PROFILES[@]}"; do
+        file="$dir/gimp-ai-plugin/config.json"
+        file_exists "$file" || continue
+
+        # Exits 0 when it rewrote the file, 1 when nothing was left to drop.
+        if python3 - "$file" "$DRY_RUN" << 'PY'
+import json
+import sys
+
+path, dry_run = sys.argv[1], sys.argv[2] == "true"
+with open(path, encoding="utf-8") as f:
+    config = json.load(f)
+
+changed = False
+for section in ("openai", "gemini", "sdwebui"):
+    if section in config:
+        del config[section]
+        changed = True
+if config.get("provider") not in (None, "comfyui-klein", "comfyui-qwen"):
+    del config["provider"]
+    changed = True
+
+if changed and not dry_run:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+sys.exit(0 if changed else 1)
+PY
+        then
+            print_info "Cleaned online provider settings: $file"
+            removed=true
+        fi
+    done
+
+    if [[ "$removed" == true ]]; then
+        SUMMARY+=("Online AI Settings|$CONFIGURATION_MESSAGE")
+    else
+        SUMMARY+=("Online AI Settings|⏭️ None left")
+    fi
+}
+
+########################################
 # Shared settings from config.sh.
 ########################################
-ai_configure_keys() {
+ai_configure_settings() {
     local changed=false
     local configured=false
+    local comfyui_url="${COMFYUI_URL:-}"
     local rc
-
-    if [[ -n "${GEMINI_API_KEY:-}" ]]; then
-        configured=true
-        rc=0
-        ai_write_shared_key "gemini-api-key" "$GEMINI_API_KEY" || rc=$?
-        (( rc == 0 )) && changed=true
-    else
-        print_info "GEMINI_API_KEY not set in config.sh — Gemini backends stay unconfigured."
-    fi
-
-    if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-        configured=true
-        rc=0
-        ai_write_shared_key "openai-api-key" "$OPENAI_API_KEY" || rc=$?
-        (( rc == 0 )) && changed=true
-    else
-        print_info "OPENAI_API_KEY not set in config.sh — set it for the OpenAI provider."
-    fi
 
     if [[ -n "${WITHOUTBG_SERVER_URL:-}" ]]; then
         configured=true
@@ -331,11 +390,17 @@ ai_configure_keys() {
         print_info "WITHOUTBG_SERVER_URL not set in config.sh — WithoutBG falls back to a local server."
     fi
 
-    # Optional: without it the plug-ins use ComfyUI's default address.
-    if [[ -n "${COMFYUI_URL:-}" ]]; then
+    # The ComfyUI this setup installs (features/comfyui.sh) listens on
+    # COMFYUI_PORT; without either setting the plug-ins use ComfyUI's
+    # default address.
+    if [[ -z "$comfyui_url" && -n "${COMFYUI_DIR:-}" ]]; then
+        comfyui_url="http://127.0.0.1:${COMFYUI_PORT:-8188}"
+    fi
+
+    if [[ -n "$comfyui_url" ]]; then
         configured=true
         rc=0
-        ai_write_shared_key "comfyui-url" "$COMFYUI_URL" || rc=$?
+        ai_write_shared_key "comfyui-url" "$comfyui_url" || rc=$?
         (( rc == 0 )) && changed=true
     fi
 
@@ -363,5 +428,7 @@ feature_install() {
 
     ai_install_remove_selection
 
-    ai_configure_keys
+    ai_remove_online_settings
+
+    ai_configure_settings
 }

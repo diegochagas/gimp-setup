@@ -8,17 +8,14 @@
 # red overlay), press Q again, then run this from Filters > AI.
 #
 # For prompt-based fills ("Generative Fill") use the GIMP AI Plugin
-# installed by gimp-setup, which shares the same backends and API keys.
+# installed by gimp-setup, which shares the same models.
 #
-# Backends:
-#   gemini   Google Gemini image model ("Nano Banana"), free API tier.
-#            Key from https://aistudio.google.com/apikey, stored in
-#            ~/.config/PhotoGIMP/gemini-api-key (host and/or Flatpak
-#            sandbox copy) or the GEMINI_API_KEY environment variable.
+# Models (fully local, through a running ComfyUI server; no account, key
+# or online service):
 #   comfyui-klein / comfyui-qwen
-#            Local ComfyUI server running FLUX.2 klein (fast) or
-#            Qwen-Image-Edit (slower, cleaner on structured backgrounds),
-#            through comfyui_client.py next to this file. No key needed.
+#            FLUX.2 klein (fast) or Qwen-Image-Edit (slower, cleaner on
+#            structured backgrounds), through comfyui_client.py next to
+#            this file.
 #            Address: COMFYUI_URL or ~/.config/PhotoGIMP/comfyui-url
 #            (default http://127.0.0.1:8188). ComfyUI must be running.
 #            "What is selected" picks how the model is shown the area:
@@ -28,26 +25,15 @@
 #            comes back as a flat patch on halftone scans). Auto hides
 #            it first and redoes the job the other way when the fill
 #            comes back flat.
-#   iopaint  Local inpainting (LaMa model), no key needed:
-#            pipx install iopaint && iopaint start --model=lama --port=8080
-#            Serves on http://127.0.0.1:8080 (override: PHOTOGIMP_IOPAINT_URL)
-#   sdwebui  Local Stable Diffusion WebUI (AUTOMATIC1111) with --api on
-#            http://127.0.0.1:7860 (override: PHOTOGIMP_A1111_URL)
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
 # (at your option) any later version.
 
-import base64
-import json
 import os
-import re
 import sys
 import tempfile
-import time
-import urllib.error
-import urllib.request
 
 import gi
 gi.require_version('Gimp', '3.0')
@@ -58,125 +44,8 @@ from gi.repository import GLib, GObject, Gio
 
 import comfyui_client
 
-GEMINI_MODEL = os.environ.get('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash-image')
-GEMINI_URL = ('https://generativelanguage.googleapis.com/v1beta/models/'
-              + GEMINI_MODEL + ':generateContent')
-IOPAINT_URL = os.environ.get('PHOTOGIMP_IOPAINT_URL', 'http://127.0.0.1:8080')
-A1111_URL = os.environ.get('PHOTOGIMP_A1111_URL', 'http://127.0.0.1:7860')
-
-REMOVE_INSTRUCTION = (
-    'You are a photo retouching engine. The first image is a photo. The '
-    'second image is a mask of the same size: the WHITE area marks an '
-    'unwanted object. Remove that object completely and reconstruct the '
-    'background behind it so the photo looks natural, matching the '
-    'surrounding texture, lighting, grain and perspective. Do not change '
-    'anything outside the white area. Return only the edited photo at the '
-    'same size, with no added text, borders or watermarks.')
-
 
 # ---------------------------------------------------------------- backends
-
-def _gemini_api_key():
-    """Find the Gemini key: env var, host key file, sandbox key file.
-
-    Under Flatpak GIMP, GLib.get_user_config_dir() points inside the
-    sandbox (~/.var/app/org.gimp.GIMP/config), while gimp-setup writes
-    the key to the host ~/.config — so both locations are probed.
-    """
-    key = os.environ.get('GEMINI_API_KEY', '').strip()
-    if key:
-        return key
-    candidates = [
-        os.path.join(os.path.expanduser('~'), '.config',
-                     'PhotoGIMP', 'gemini-api-key'),
-        os.path.join(GLib.get_user_config_dir(),
-                     'PhotoGIMP', 'gemini-api-key'),
-    ]
-    for key_file in candidates:
-        try:
-            with open(key_file, encoding='utf-8') as f:
-                key = f.read().strip()
-            if key:
-                return key
-        except OSError:
-            continue
-    return ''
-
-
-RATE_LIMIT_MESSAGE = (
-    'Gemini rate limit reached (HTTP 429). The free tier only allows a few '
-    'image requests per minute and per day. Wait a minute and try again, '
-    'check your quota at https://aistudio.google.com/usage, or switch the '
-    'Backend to IOPaint (local), which has no limits.')
-
-
-def _http_json(url, payload, headers, timeout=300):
-    data = json.dumps(payload).encode('utf-8')
-    req = urllib.request.Request(url, data=data, method='POST')
-    req.add_header('Content-Type', 'application/json')
-    for name, value in headers.items():
-        req.add_header(name, value)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
-
-
-def _retry_delay_seconds(body):
-    """Retry delay suggested by a Gemini 429 response, if any."""
-    match = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', body)
-    if match:
-        return float(match.group(1))
-    return None
-
-
-def _gemini_post(payload, key):
-    """POST to Gemini, retrying once when it suggests a short delay."""
-    for attempt in (1, 2):
-        try:
-            return _http_json(GEMINI_URL, payload, {'x-goog-api-key': key})
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode('utf-8', 'replace')
-            except Exception:
-                body = ''
-            if e.code == 429:
-                delay = _retry_delay_seconds(body)
-                if attempt == 1 and delay is not None and delay <= 35:
-                    Gimp.progress_set_text(
-                        'Gemini rate limit — retrying in %.0fs...' % delay)
-                    time.sleep(delay)
-                    continue
-                raise RuntimeError(RATE_LIMIT_MESSAGE)
-            raise RuntimeError('Gemini API error %d: %s'
-                               % (e.code, body[:300]))
-
-
-def call_gemini(context_png, mask_png):
-    key = _gemini_api_key()
-    if not key:
-        raise RuntimeError(
-            'No Gemini API key found. Create a free key at '
-            'https://aistudio.google.com/apikey and either export '
-            'GEMINI_API_KEY or save it to ~/.config/PhotoGIMP/gemini-api-key')
-    payload = {
-        'contents': [{'parts': [
-            {'text': REMOVE_INSTRUCTION},
-            {'inlineData': {'mimeType': 'image/png',
-                            'data': base64.b64encode(context_png).decode()}},
-            {'inlineData': {'mimeType': 'image/png',
-                            'data': base64.b64encode(mask_png).decode()}},
-        ]}],
-        'generationConfig': {'responseModalities': ['IMAGE', 'TEXT']},
-    }
-    raw = _gemini_post(payload, key)
-    reply = json.loads(raw)
-    for candidate in reply.get('candidates', []):
-        for part in candidate.get('content', {}).get('parts', []):
-            inline = part.get('inlineData') or part.get('inline_data')
-            if inline and inline.get('data'):
-                return base64.b64decode(inline['data'])
-    raise RuntimeError('Gemini returned no image. Full reply: '
-                       + raw.decode('utf-8', 'replace')[:800])
-
 
 COMFYUI_MODES = {'auto': 'auto', 'object': 'hidden', 'texture': 'see_through'}
 
@@ -191,49 +60,6 @@ def call_comfyui(model, context_png, mask_png, target):
     return comfyui_client.inpaint(model, context_png, mask_png, None,
                                   progress=progress,
                                   mode=COMFYUI_MODES.get(target, 'auto'))
-
-
-def call_iopaint(context_png, mask_png):
-    payload = {
-        'image': base64.b64encode(context_png).decode(),
-        'mask': base64.b64encode(mask_png).decode(),
-    }
-    try:
-        return _http_json(IOPAINT_URL.rstrip('/') + '/api/v1/inpaint',
-                          payload, {})
-    except urllib.error.URLError as e:
-        raise RuntimeError(
-            'Could not reach IOPaint at %s (%s). Start it with:\n'
-            '  pipx install iopaint\n'
-            '  iopaint start --model=lama --port=8080' % (IOPAINT_URL, e))
-
-
-def call_sdwebui(context_png, mask_png, width, height):
-    payload = {
-        'init_images': [base64.b64encode(context_png).decode()],
-        'mask': base64.b64encode(mask_png).decode(),
-        'prompt': 'background',
-        'negative_prompt': 'text, watermark, low quality',
-        'denoising_strength': 0.9,
-        'inpainting_fill': 1,          # keep original pixels as base
-        'inpainting_mask_invert': 0,
-        'inpaint_full_res': False,     # context is already cropped
-        'width': width,
-        'height': height,
-        'steps': 28,
-        'cfg_scale': 7,
-    }
-    try:
-        raw = _http_json(A1111_URL.rstrip('/') + '/sdapi/v1/img2img',
-                         payload, {})
-    except urllib.error.URLError as e:
-        raise RuntimeError(
-            'Could not reach Stable Diffusion WebUI at %s (%s). Launch '
-            'AUTOMATIC1111 with the --api flag.' % (A1111_URL, e))
-    images = json.loads(raw).get('images')
-    if not images:
-        raise RuntimeError('Stable Diffusion WebUI returned no image.')
-    return base64.b64decode(images[0])
 
 
 # ------------------------------------------------------------- gimp helpers
@@ -312,7 +138,7 @@ def _composite_result(image, result_bytes, cx, cy, cw, ch, tmpdir):
     return layer
 
 
-def _run_remove(image, backend, padding, target):
+def _run_remove(image, model, padding, target):
     ok, non_empty, x1, y1, x2, y2 = Gimp.Selection.bounds(image)
     if not non_empty:
         raise RuntimeError(
@@ -333,17 +159,10 @@ def _run_remove(image, backend, padding, target):
     ctx_png, mask_png = _render_context_and_mask(image, cx, cy, cw, ch,
                                                  4, tmpdir)
 
-    Gimp.progress_set_text('Waiting for %s...' % backend)
+    Gimp.progress_set_text('Waiting for ComfyUI (%s)...'
+                           % comfyui_client.MODELS[model])
     Gimp.progress_pulse()
-    if backend.startswith('comfyui-'):
-        result = call_comfyui(backend[len('comfyui-'):], ctx_png, mask_png,
-                              target)
-    elif backend == 'iopaint':
-        result = call_iopaint(ctx_png, mask_png)
-    elif backend == 'sdwebui':
-        result = call_sdwebui(ctx_png, mask_png, cw, ch)
-    else:
-        result = call_gemini(ctx_png, mask_png)
+    result = call_comfyui(model, ctx_png, mask_png, target)
 
     Gimp.progress_set_text('Compositing result...')
     image.undo_group_start()
@@ -382,7 +201,7 @@ def run(procedure, run_mode, image, drawables, config, data):
 
     try:
         _run_remove(image,
-                    config.get_property('backend'),
+                    config.get_property('model'),
                     config.get_property('padding'),
                     config.get_property('target'))
     except Exception as e:
@@ -411,21 +230,19 @@ class AiRemoveSelection(Gimp.PlugIn):
         procedure.set_documentation(
             'Remove the selected object with AI inpainting',
             'Removes whatever is inside the current selection and '
-            'reconstructs the background, like Photoshop\'s Remove tool. '
+            'reconstructs the background with a local model, like '
+            'Photoshop\'s Remove tool. '
             'Paint the selection with Quick Mask (Q) for a brush-like '
             'workflow.', name)
 
-        backend = Gimp.Choice.new()
-        backend.add('gemini', 0, 'Gemini / Nano Banana (online, free key)', '')
-        backend.add('comfyui-klein', 3,
-                    'ComfyUI - FLUX.2 klein (local, fast)', '')
-        backend.add('comfyui-qwen', 4,
-                    'ComfyUI - Qwen-Image-Edit (local, slower)', '')
-        backend.add('iopaint', 1, 'IOPaint - LaMa (local)', '')
-        backend.add('sdwebui', 2, 'Stable Diffusion WebUI (local)', '')
+        model = Gimp.Choice.new()
+        model.add('klein', 0,
+                  'FLUX.2 klein (local, fast)', '')
+        model.add('qwen', 1,
+                  'Qwen-Image-Edit (local, slower)', '')
         procedure.add_choice_argument(
-            'backend', '_Backend', 'AI service to use', backend, 'gemini',
-            GObject.ParamFlags.READWRITE)
+            'model', '_Model', 'Local ComfyUI model to use', model,
+            'klein', GObject.ParamFlags.READWRITE)
         target = Gimp.Choice.new()
         target.add('auto', 2, 'Auto (retries as texture if the fill is flat)',
                    '')
@@ -433,8 +250,8 @@ class AiRemoveSelection(Gimp.PlugIn):
         target.add('texture', 1,
                    'Text or marks over a texture (scan, print)', '')
         procedure.add_choice_argument(
-            'target', '_What is selected (ComfyUI only)',
-            'ComfyUI backends: an object is hidden from the AI so it is '
+            'target', '_What is selected',
+            'An object is hidden from the AI so it is '
             'not redrawn; text or marks over a texture stay visible so '
             'the texture under them is continued; Auto tries the first '
             'and falls back to the second',
