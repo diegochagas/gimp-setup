@@ -344,6 +344,29 @@ def _sampler_nodes(model, model_ref, positive, negative, latent, width, height):
     }
 
 
+def _generate_graph(url, prompt, width, height):
+    """Text-to-image graph (FLUX.2 klein); the image is output node "out"."""
+    graph, model_ref, clip, vae = _model_nodes(url, "klein")
+    graph.update({
+        "pos": {"class_type": "CLIPTextEncode",
+                "inputs": {"clip": clip, "text": prompt}},
+        "neg": {"class_type": "ConditioningZeroOut",
+                "inputs": {"conditioning": ["pos", 0]}},
+        "latent": {"class_type": "EmptyFlux2LatentImage", "inputs": {
+            "width": width, "height": height, "batch_size": 1}},
+    })
+    graph.update(_sampler_nodes("klein", model_ref, ["pos", 0], ["neg", 0],
+                                ["latent", 0], width, height))
+    graph.update({
+        "decoded": {"class_type": "VAEDecode",
+                    "inputs": {"samples": ["sampled", 0], "vae": vae}},
+        # PreviewImage writes to ComfyUI's temp folder, not output/.
+        "out": {"class_type": "PreviewImage",
+                "inputs": {"images": ["decoded", 0]}},
+    })
+    return graph
+
+
 def _prefill_nodes(work_w, work_h):
     """Nodes that fill the masked area of "img" with the colors around it.
 
