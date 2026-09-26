@@ -47,7 +47,7 @@ no separate hardware bar beyond what GIMP itself needs:
 
 The AI plug-ins never run inference inside GIMP: WithoutBG needs a
 reachable server (local Docker/Mac app by default, per
-`WITHOUTBG_SERVER_URL`), and Generative Fill/AI Remove Selection use a
+`WITHOUTBG_SERVER_URL`), and Generative Fill/AI Remove Selection/AI Restore Photo use a
 local [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server running
 FLUX.2 klein or Qwen-Image-Edit. That ComfyUI is the one heavy piece, and it
 is **opt-in** (`COMFYUI_DIR`, see [Configuration](#configuration)): about
@@ -126,7 +126,7 @@ commands and guard direct file writes with `DRY_RUN`).
 | 40       | [`comfyui.sh`](features/comfyui.sh)                   | ComfyUI + FLUX.2 klein / Qwen-Image-Edit models (opt-in, ~42 GB) | [Local AI models](#local-ai-models-comfyui) |
 | 40       | [`slos-gimpainter.sh`](features/slos-gimpainter.sh)   | Painting brushes, dynamics and tool presets             | [SLOS_GIMPAINTER.md](docs/SLOS_GIMPAINTER.md)         |
 | 50       | [`linuxbeaver.sh`](features/linuxbeaver.sh)           | LinuxBeaver GEGL effect plug-ins                        | [LINUXBEAVER.md](docs/LINUXBEAVER.md)                 |
-| 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The three AI plug-ins (fully local) + shared settings | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
+| 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The four AI plug-ins (fully local) + shared settings  | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
 
 The order matters: GIMP is installed first; PhotoGIMP layers its
 configuration on top; the Photoshop keymap runs after PhotoGIMP on purpose
@@ -181,7 +181,7 @@ GIMP must be closed while this feature runs.
 
 #### AI Plug-ins — `features/ai-plugins.sh`
 
-The three AI plug-ins, installed as one feature (details in
+The four AI plug-ins, installed as one feature (details in
 [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)). Everything runs on this machine:
 no account, no API key, nothing is uploaded.
 
@@ -195,6 +195,11 @@ no account, no API key, nothing is uploaded.
 - **AI Remove Selection** — `Filters > AI > Remove Selection (AI)…`.
   Photoshop-style Remove tool from PhotoGIMP: Quick Mask-paint the object,
   run, gone. Same two local models.
+- **AI Restore Photo** — `Filters > AI > Restore Photo (AI)…`. Repairs a
+  scanned photo print (blotches, stains, scratches, specks, or chemical
+  burns) with the [photo-restore](https://github.com/diegochagas/photo-restore)
+  method: the model's pixels are kept only where the print was damaged,
+  as a new layer whose mask you can paint. Same two local models.
 
 The shared settings from `config.sh` (the server URLs) are written for all
 of them, host and Flatpak sandbox alike. Earlier versions also offered
@@ -235,7 +240,8 @@ installs it; the whole feature is **skipped unless `COMFYUI_DIR` is set** in
   enabled at boot**: it holds GPU memory while it runs.
 
 ComfyUI has to be **running while the tools are used** — GIMP's Flatpak
-sandbox cannot start it. Start it before, and stop it when you are done: a
+sandbox cannot start it; when it is down, the tools' error message shows
+the command that starts it. Start it before, and stop it when you are done: a
 loaded model keeps several GB of GPU memory and up to ~23 GB of RAM (Qwen)
 until the service stops.
 
@@ -284,6 +290,13 @@ comes back flat:
 
 ![AI Remove Selection erasing a block of text from a halftone scan](docs/images/ai-remove-text.jpg)
 
+**Restore Photo (AI)** — a scanned print goes in; the model's repair is
+added as a layer masked to the damage it fixed, the rest of the scan stays
+exactly as it was. Details and options in
+[docs/AI_PLUGINS.md](docs/AI_PLUGINS.md#ai-restore-photo).
+
+![AI Restore Photo repairing a water-damaged wedding print](docs/images/ai-restore-photo.jpg)
+
 **Generative Fill** — the prompt replaces what is selected… (prompt: *a
 sleeping orange cat curled up on the bench*)
 
@@ -293,6 +306,11 @@ sleeping orange cat curled up on the bench*)
 selection (prompt: *a shiny golden five-pointed star*, both models):
 
 ![Generative Fill adding a golden star with FLUX.2 klein and Qwen-Image-Edit](docs/images/ai-fill-add.jpg)
+
+It also **continues the picture into a blank border** (white, transparent,
+or a canvas made bigger): select the blank part and prompt `continue the
+image` (or `extend the background`, `continuar a imagem`, `fill`). Details
+in [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md#generative-fill).
 
 ## Notes
 

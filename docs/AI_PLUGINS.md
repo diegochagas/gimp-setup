@@ -1,11 +1,12 @@
 # AI Plug-ins — `features/ai-plugins.sh`
 
-One feature installs the three AI plug-ins and their shared settings.
-After restarting GIMP, Generative Fill and AI Remove Selection appear
-under **Filters → AI**; WithoutBG under **Tools → WithoutBG**.
+One feature installs the four AI plug-ins and their shared settings.
+After restarting GIMP, Generative Fill, AI Remove Selection and AI
+Restore Photo appear under **Filters → AI**; WithoutBG under
+**Tools → WithoutBG**.
 
-Everything runs on this machine: Generative Fill and AI Remove Selection
-use the local ComfyUI models (installed by `features/comfyui.sh`), so there
+Everything runs on this machine: Generative Fill, AI Remove Selection and
+AI Restore Photo use the local ComfyUI models (installed by `features/comfyui.sh`), so there
 is no account, no API key and nothing is uploaded.
 
 | Tool | What it does | Runs on |
@@ -13,6 +14,7 @@ is no account, no API key and nothing is uploaded.
 | **WithoutBG** | Cuts the subject out: adds the alpha matte as an unapplied layer mask | WithoutBG server from `WITHOUTBG_SERVER_URL` |
 | **Generative Fill** | Fills the **selection** from a **text prompt**; also *Image Generator* (text → new layer) | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
 | **AI Remove Selection** | Photoshop-style **Remove tool**: select (or Quick Mask-paint) an object, run, it's gone | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
+| **AI Restore Photo** | Repairs a **scanned photo print**: blotches, stains, scratches, specks (or chemical burns) repainted, the rest of the scan untouched | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
 
 ## The tools
 
@@ -68,12 +70,49 @@ paint the red over the object instead, like Photoshop, right-click the
 Quick Mask button (bottom-left corner of the canvas) and choose *Mask
 Selected Areas*; that setting is per image.
 
+### AI Restore Photo
+
+*Filters → AI → Restore Photo (AI)…* — the method of the
+[photo-restore](https://github.com/diegochagas/photo-restore) project as
+a GIMP tool (`assets/plug-ins/ai-restore-photo/`). Open the scan and run
+it; no selection needed.
+
+1. The model redraws the whole photo with the damage painted over
+   (~1 MP, 15–40 s with FLUX.2 klein, ~110 s with Qwen-Image-Edit).
+2. `restore_mask.py` shifts its picture onto the scan, matches its colours
+   to the scan's, and keeps it only where the two still differ: that is
+   the damage the model repaired. Changed spots under *Smallest repair*
+   px are ignored (a moved highlight, a redrawn button).
+3. The result is a new layer **Restored (AI)** over the untouched scan,
+   whose **layer mask is the repaired damage**. The layer holds the
+   model's whole picture (colour-matched), so the mask can be painted
+   either way: **black** where the model changed something it should not
+   have (a face, an expression, an invented person), **white** where
+   damage was missed.
+
+| Option | Use |
+|---|---|
+| *Model* | FLUX.2 klein (default) keeps faces and structure best. Qwen-Image-Edit repaints more thoroughly but tends to change faces. |
+| *Damage* | *Blotches, flakes, stains…* for most prints; *Chemical burns* (gold/orange metallic flakes, rusty blotches) uses a burn-removal prompt and usually needs Qwen-Image-Edit. |
+| *Sensitivity threshold* | 22 by default. Lower (12–15) catches faint damage such as white blotches on a white shirt, but also takes changes that are not damage; higher keeps more of the scan. |
+| *Smallest repair* | 300 px by default. |
+
+With a selection, only damage inside it is repaired. Straightening,
+cropping and colour correction are left to GIMP's own tools (*Image →
+Transform*, *Colors → Levels / Auto*). Unlike the photo-restore command
+line, the GIMP tool has no face guard and no Poisson blending (they need
+OpenCV, which GIMP's Python does not have): check faces and fix the mask
+by hand. It needs only numpy, scipy and Pillow, which GIMP's Flatpak
+Python already ships. Where blotches covered people the model invents
+them: look closely, and paint those areas black if they are wrong.
+
 ## Fully local AI (ComfyUI)
 
-Generative Fill, the Image Generator and AI Remove Selection run on a
+Generative Fill, the Image Generator, AI Remove Selection and AI Restore
+Photo run on a
 local [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server, so
 nothing leaves the machine. `assets/plug-ins/comfyui/comfyui_client.py`
-(pure standard library) is installed next to both plug-ins and talks to
+(pure standard library) is installed next to each of these plug-ins and talks to
 ComfyUI's HTTP API; it also runs from a terminal for testing (`--help`
 text is its docstring).
 
@@ -133,6 +172,22 @@ Known limit: asked to **replace** an object, Qwen-Image-Edit (4-step)
 tends to keep it and add the new one beside it. Use FLUX.2 klein for
 replacements (it does them in one pass), or Remove Selection first.
 
+**Continuing the picture (outpaint).** Select a blank part of the image —
+a white or transparent border, a canvas made bigger with *Image → Canvas
+Size* — and ask to continue it: `continue the image`, `extend the
+background`, `fill in the blank`, `continuar a imagem`, `preencher`, or
+just `fill`. The selection is then hidden from the model and the picture
+next to it is extended into it, one side at a time (top, bottom, left,
+right), each side seeing the blank band plus a strip of picture at least
+as wide. Anything else in the prompt is followed too (`continue the
+image with a night sky`). On a photo it continues floors, walls and
+crowds seamlessly (it invents the people it adds); on a collage such as a
+sticker poster it may repeat a logo or a sticker near the edge — undo and
+run again for another result. Use FLUX.2 klein: Qwen-Image-Edit tends to
+draw the picture again, as an object, inside the band. The whole picture
+is sent (not only the selection's box), so every side costs one model
+run (~15–35 s with klein).
+
 ## Settings
 
 `config.sh` values are written to shared files read by **all** the plug-ins,
@@ -162,10 +217,13 @@ Environment overrides: `COMFYUI_URL`, `WITHOUTBG_SERVER_URL`.
 - **"Cannot reach the WithoutBG server"** — set `WITHOUTBG_SERVER_URL` in
   `config.sh` and re-run `./setup.sh`, or type the URL in the plug-in
   dialog; the default assumes a server on `http://127.0.0.1:8000`.
-- **"ComfyUI is not reachable"** — start ComfyUI before running the tool
-  (`systemctl --user start comfyui` with the service this repo installs;
-  it is not enabled at boot, so this is needed after every reboot) and
-  check the address in *Filters → AI → Settings* / `COMFYUI_URL`.
+- **"ComfyUI is not reachable"** — the message shows the command that
+  starts it: `systemctl --user start comfyui` for the service this repo
+  installs (another unit name: set `COMFYUI_SERVICE` in GIMP's
+  environment). The service is not enabled at boot, so this is needed
+  after every reboot; wait until the address opens in a browser (~20 s),
+  then run the tool again. If it is running, check the address in
+  *Filters → AI → Settings* / `COMFYUI_URL`.
 - **"ComfyUI has no … model installed"** — the message names the file
   pattern it looked for; put the model in ComfyUI's `models/` folders.
 - **A ComfyUI run takes minutes** — the first run loads the model from
