@@ -4,7 +4,7 @@
 ########################################
 # Feature: AI Plug-ins
 #
-# Installs the three AI plug-ins as one
+# Installs the four AI plug-ins as one
 # feature, plus their shared settings:
 #
 #   WithoutBG
@@ -35,10 +35,19 @@
 #     local: FLUX.2 klein or
 #     Qwen-Image-Edit through ComfyUI.
 #
+#   AI Restore Photo
+#     Filters > AI > Restore Photo (AI)
+#     Repairs a scanned photo print:
+#     blotches, stains, scratches (or
+#     chemical burns) are repainted by
+#     a local model, kept only where
+#     the print was damaged, as a new
+#     layer with an editable mask.
+#
 #   ComfyUI client
 #     assets/plug-ins/comfyui/comfyui_client.py
-#     is installed next to both plug-ins
-#     above; the ComfyUI server itself is
+#     is installed next to the three
+#     ComfyUI plug-ins above; the ComfyUI server itself is
 #     installed by features/comfyui.sh.
 #
 #   Shared settings
@@ -303,6 +312,43 @@ ai_install_remove_selection() {
 }
 
 ########################################
+# AI Restore Photo: repairs scanned photo
+# prints (the photo-restore method); the
+# damage mask is computed by
+# restore_mask.py with the numpy, scipy
+# and Pillow GIMP's Python ships.
+########################################
+ai_install_restore_photo() {
+    local plugin_dir="$ASSETS_DIR/plug-ins/ai-restore-photo"
+    local sources=(
+        "$plugin_dir/ai-restore-photo.py"
+        "$plugin_dir/restore_mask.py"
+        "$AI_COMFYUI_CLIENT"
+    )
+
+    local src
+    for src in "${sources[@]}"; do
+        if ! file_exists "$src"; then
+            print_info "❌ Plug-in source not found at $src"
+            SUMMARY+=("AI Restore Photo|❌ Missing assets")
+            return
+        fi
+    done
+
+    print_step "Installing AI Restore Photo..."
+
+    local rc=0
+    ai_install_plugin "ai-restore-photo" "" "${sources[@]}" || rc=$?
+
+    if (( rc == 0 )); then
+        ai_refresh_pluginrc
+        SUMMARY+=("AI Restore Photo|$INSTALLATION_MESSAGE")
+    else
+        SUMMARY+=("AI Restore Photo|⏭️ Already installed")
+    fi
+}
+
+########################################
 # Removes what earlier versions saved for
 # the online providers that are gone
 # (OpenAI, Google Gemini, Stable Diffusion
@@ -427,6 +473,8 @@ feature_install() {
     ai_install_generative_fill
 
     ai_install_remove_selection
+
+    ai_install_restore_photo
 
     ai_remove_online_settings
 

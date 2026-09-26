@@ -9,20 +9,23 @@ with one of two edit models:
                                                            prompts better
 
 Pure standard library and no GIMP imports, so the same file is installed
-next to both plug-ins (Generative Fill and AI Remove Selection) and can
-be run outside GIMP:
+next to every ComfyUI plug-in (Generative Fill, AI Remove Selection and
+AI Restore Photo) and can be run outside GIMP:
 
     comfyui_client.py fill   <klein|qwen> image.png mask.png out.png "a red ball"
     comfyui_client.py hide   <klein|qwen> image.png mask.png out.png
     comfyui_client.py remove <klein|qwen> image.png mask.png out.png
     comfyui_client.py clean  <klein|qwen> image.png mask.png out.png
     comfyui_client.py generate out.png "a lighthouse at dusk" [WxH]
+    comfyui_client.py restore <klein|qwen> photo.png out.png [burns]
 
 Masks are white-on-black PNGs of the image's size: WHITE marks the area
 to change. `hide` hides the selected area from the model (objects in
 photos); `clean` lets the model see it (text or marks printed over a
 texture); `remove` and `fill` pick one, check the result and redo the
 job the other way when it failed — see _inpaint_graph and inpaint.
+`restore` redraws a whole scanned print with its damage repaired (the
+Restore Photo plug-in keeps only the pixels that changed).
 
 All pixel work (scaling, masking, pre-filling) happens inside the
 ComfyUI graph with core nodes; the only custom node used is
@@ -50,6 +53,7 @@ import urllib.request
 import uuid
 
 DEFAULT_URL = "http://127.0.0.1:8188"   # ComfyUI's default listen address
+SERVICE = "comfyui"     # systemd user unit written by features/comfyui.sh
 
 MODELS = {
     "klein": "FLUX.2 klein",
@@ -133,6 +137,55 @@ CLEAN_PROMPT = (
     "texture, pattern, grain and colors, continued seamlessly. Do not add "
     "any new object or text."
 )
+# A fill prompt that asks to continue the picture ("continue the image",
+# "extend the background", "fill in the blank", "continuar a imagem")
+# is an outpaint: the selection (typically a blank border — white,
+# transparent, a canvas made bigger) is hidden from the model and the
+# picture next to it is extended into it, one side at a time
+# (outpaint_strips). Measured on a poster in a white band: seeing the
+# blank, FLUX.2 klein framed the poster on a grey wall or drew new
+# characters around it; hidden but on the whole image, it drew the poster
+# again, blurry and bigger, behind itself (every seed and wording) — it
+# sees a rectangle and treats it as an object. Qwen did the same. Given
+# only the band and OUTPAINT_CONTEXT px of picture next to it, klein
+# continued the clouds, hair and marble; distinctive things near the edge
+# (a logo, a sticker) are sometimes repeated.
+OUTPAINT_CONTEXT = 256
+CONTINUE_WORDS = re.compile(
+    r"\b(continu\w*|extend\w*|expand\w*|outpaint\w*|uncrop\w*|prolong\w*|"
+    r"estend\w*|complet\w*|preench\w*|"
+    r"fill\s+(in|the\s+(rest|gap|blank|empty|space|area|border|margin)s?))\b"
+    r"|^\s*fill(\s+it)?\s*$",
+    re.IGNORECASE)
+OUTPAINT_PROMPT = (
+    "The smooth blurry area is a part of the picture that is missing. "
+    "Extend the picture into it: continue it seamlessly, with the same "
+    "drawing, scene, colors, patterns and lighting, as if the picture had "
+    "been larger. The picture fills the whole frame edge to edge: no "
+    "border, frame, margin, paper, wall or shadow. Do not repeat anything "
+    "that is already in the picture. No text, no logos. Request: {prompt}."
+)
+# Photo restoration (the same prompts as the photo-restore project).
+RESTORE_PROMPT = (
+    "This is a scan of an old damaged photo print. The white and brown "
+    "blotches, flakes, stains, scratches, creases and specks are damage "
+    "where the picture is missing, and the plain areas outside the print's "
+    "edges are missing parts of the photo. Repair the photo: fill every "
+    "damaged or missing area with what would naturally be there, "
+    "continuing the surrounding people, clothes, floor and background "
+    "seamlessly. Keep everything that is not damaged exactly as it is: "
+    "same framing, same colors, same faces. No text."
+)
+BURN_PROMPT = (
+    "This is a scan of an old damaged photo print. It is covered with "
+    "chemical damage: shiny gold, orange and brown metallic flakes and "
+    "specks, burn stains, rusty blotches, white spots and mottled "
+    "discoloured patches. None of that is part of the picture. Remove ALL "
+    "of it and show the clean photo underneath: walls, floor, sky, clothes "
+    "and background must be smooth and even where the damage was. Keep "
+    "every person, face, expression, object and the framing exactly as "
+    "they are. No text."
+)
 
 
 class ComfyUIError(RuntimeError):
@@ -165,10 +218,23 @@ def get_url(configured=None):
     return (url or DEFAULT_URL).rstrip("/")
 
 
+def start_command():
+    """Shell command that starts the ComfyUI service gimp-setup installs
+    (features/comfyui.sh); COMFYUI_SERVICE names another systemd unit."""
+    unit = os.environ.get("COMFYUI_SERVICE", "").strip() or SERVICE
+    return "systemctl --user start %s" % unit
+
+
 def unreachable_message(url):
-    return ("ComfyUI is not reachable at %s. Start ComfyUI first (it must "
-            "be running before using a local ComfyUI backend), or fix the "
-            "address in COMFYUI_URL / ~/.config/PhotoGIMP/comfyui-url." % url)
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host in ("127.0.0.1", "localhost", "::1"):
+        how = ("Start it in a terminal with:\n\n    %s\n\nwait until "
+               "%s opens in a browser (about 20 s), then run the tool "
+               "again." % (start_command(), url))
+    else:
+        how = "Start ComfyUI on that machine, then run the tool again."
+    return ("ComfyUI is not reachable at %s. %s\n\nWrong address? Fix it "
+            "in COMFYUI_URL / ~/.config/PhotoGIMP/comfyui-url." % (url, how))
 
 
 # ---------------------------------------------------------------- HTTP layer
@@ -524,6 +590,55 @@ def _inpaint_graph(url, model, image_name, mask_name, prompt,
     return graph
 
 
+def _edit_graph(url, model, image_name, prompt, work_w, work_h, out_w, out_h):
+    """Whole-image edit graph (no mask): the model redraws the picture
+    following `prompt`, seeing the original as its reference. Output node
+    "out" is the result at out_w x out_h."""
+    graph, model_ref, clip, vae = _model_nodes(url, model)
+    graph.update({
+        "img_in": {"class_type": "LoadImage", "inputs": {"image": image_name}},
+        "img": {"class_type": "ImageScale", "inputs": {
+            "image": ["img_in", 0], "upscale_method": "lanczos",
+            "width": work_w, "height": work_h, "crop": "disabled"}},
+        "ref_latent": {"class_type": "VAEEncode",
+                       "inputs": {"pixels": ["img", 0], "vae": vae}},
+    })
+    if model == "qwen":
+        for key, text in (("pos_txt", prompt), ("neg_txt", "")):
+            graph[key] = {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {
+                "clip": clip, "vae": vae, "image1": ["img", 0],
+                "prompt": text}}
+        for key, src in (("pos", "pos_txt"), ("neg", "neg_txt")):
+            graph[key] = {"class_type": "FluxKontextMultiReferenceLatentMethod",
+                          "inputs": {"conditioning": [src, 0],
+                                     "reference_latents_method":
+                                         "index_timestep_zero"}}
+        latent = ["ref_latent", 0]
+    else:
+        graph["pos_txt"] = {"class_type": "CLIPTextEncode",
+                            "inputs": {"clip": clip, "text": prompt}}
+        graph["neg_txt"] = {"class_type": "ConditioningZeroOut",
+                            "inputs": {"conditioning": ["pos_txt", 0]}}
+        for key, src in (("pos", "pos_txt"), ("neg", "neg_txt")):
+            graph[key] = {"class_type": "ReferenceLatent", "inputs": {
+                "conditioning": [src, 0], "latent": ["ref_latent", 0]}}
+        graph["empty"] = {"class_type": "EmptyFlux2LatentImage", "inputs": {
+            "width": work_w, "height": work_h, "batch_size": 1}}
+        latent = ["empty", 0]
+    graph.update(_sampler_nodes(model, model_ref, ["pos", 0], ["neg", 0],
+                                latent, work_w, work_h))
+    graph.update({
+        "decoded": {"class_type": "VAEDecode",
+                    "inputs": {"samples": ["sampled", 0], "vae": vae}},
+        "sized": {"class_type": "ImageScale", "inputs": {
+            "image": ["decoded", 0], "upscale_method": "lanczos",
+            "width": out_w, "height": out_h, "crop": "disabled"}},
+        # PreviewImage writes to ComfyUI's temp folder, not output/.
+        "out": {"class_type": "PreviewImage", "inputs": {"images": ["sized", 0]}},
+    })
+    return graph
+
+
 # The checks below send back STATS_SIDE px maps next to the mask they
 # were sampled through; is_flat / is_unchanged read their means.
 
@@ -744,14 +859,15 @@ def _png_mean(png_bytes):
     return sum(sum(row) for row in _png_rows(png_bytes)) / float(width * height)
 
 
-def mask_box(mask_png):
-    """(x, y, width, height) of the box around the mask's white area."""
+def mask_box(mask_png, white=True):
+    """(x, y, width, height) of the box around the mask's white area (the
+    black area with white=False)."""
     left = top = None
     right = bottom = -1
     for y, row in enumerate(_png_rows(mask_png)):
-        if max(row) < 128:
+        if (max(row) < 128) if white else (min(row) >= 128):
             continue
-        lit = [x for x, value in enumerate(row) if value >= 128]
+        lit = [x for x, value in enumerate(row) if (value >= 128) == white]
         left = lit[0] if left is None else min(left, lit[0])
         right = max(right, lit[-1])
         top = y if top is None else top
@@ -778,6 +894,37 @@ def fill_crop(mask_png, width, height):
     if (right - left, bottom - top) == (width, height):
         return None
     return left, top, right - left, bottom - top
+
+
+def outpaint_strips(mask_png, width, height):
+    """Crops an outpaint runs on, one per side where the area reaches
+    beyond the rest of the picture: the blank band plus as much picture
+    next to it (at least OUTPAINT_CONTEXT px). [] when the area is inside
+    the picture (a hole, not a border)."""
+    try:
+        box = mask_box(mask_png, white=False)
+    except (ComfyUIError, zlib.error, IndexError, struct.error):
+        return []
+    if not box:
+        return []
+    x0, y0, known_w, known_h = box
+    x1, y1 = x0 + known_w, y0 + known_h
+
+    def depth(band):
+        return band + max(band, OUTPAINT_CONTEXT)
+
+    strips = []
+    if y0 > 0:
+        strips.append((0, 0, width, min(height, depth(y0))))
+    if y1 < height:
+        top = max(0, height - depth(height - y1))
+        strips.append((0, top, width, height - top))
+    if x0 > 0:
+        strips.append((0, 0, min(width, depth(x0)), height))
+    if x1 < width:
+        left = max(0, width - depth(width - x1))
+        strips.append((left, 0, width - left, height))
+    return strips
 
 
 def is_flat(images):
@@ -838,7 +985,9 @@ def inpaint(model, image_png, mask_png, prompt, url=None, progress=None,
                when the fill comes back flat on a detailed background;
       fill     see-through first (keeps the real background around the
                new content), hidden when the area comes back unchanged.
-    Fills run on a tight crop around the area (see FILL_MARGIN).
+    Fills run on a tight crop around the area (see FILL_MARGIN), except
+    a continuation prompt ("continue the image"), which is an outpaint:
+    one hidden pass per side the area borders (see CONTINUE_WORDS).
     Returns PNG bytes of the image's size; pixels outside the mask are
     the input's own.
     """
@@ -855,6 +1004,19 @@ def inpaint(model, image_png, mask_png, prompt, url=None, progress=None,
     }
     image_name = _upload(url, "image.png", image_png)
     mask_name = _upload(url, "mask.png", mask_png)
+
+    if prompt and mode == "auto" and CONTINUE_WORDS.search(prompt):
+        text = OUTPAINT_PROMPT.format(prompt=prompt)
+        strips = outpaint_strips(mask_png, width, height) or [None]
+        for number, crop in enumerate(strips):
+            if number:   # the next side continues the sides done so far
+                image_name = _upload(url, "image.png", image_png)
+            out_w, out_h = (crop[2], crop[3]) if crop else (width, height)
+            work_w, work_h = work_size(out_w, out_h)
+            graph = _inpaint_graph(url, model, image_name, mask_name, text,
+                                   work_w, work_h, out_w, out_h, crop=crop)
+            image_png = _run(url, graph, progress, timeout)["out"]
+        return image_png
 
     crop = fill_crop(mask_png, width, height) if prompt else None
     out_w, out_h = (crop[2], crop[3]) if crop else (width, height)
@@ -888,6 +1050,22 @@ def generate(prompt, width=1024, height=1024, url=None, progress=None,
     return _run(url, graph, progress, timeout)["out"]
 
 
+def restore(model, image_png, burns=False, url=None, progress=None,
+            timeout=TIMEOUT):
+    """Repair a scanned photo print: the whole picture is redrawn with the
+    damage (blotches, scratches, stains; chemical burns with `burns`)
+    painted over. Returns PNG bytes of the image's size. The caller keeps
+    only the pixels that changed (the damage) — see ai-restore-photo."""
+    url = get_url(url)
+    width, height = png_size(image_png)
+    image_name = _upload(url, "restore.png", image_png)
+    work_w, work_h = work_size(width, height)
+    prompt = BURN_PROMPT if burns else RESTORE_PROMPT
+    graph = _edit_graph(url, model, image_name, prompt, work_w, work_h,
+                        width, height)
+    return _run(url, graph, progress, timeout)["out"]
+
+
 def _main(argv):
     def show(elapsed):
         sys.stderr.write("\r%4d s" % elapsed)
@@ -902,6 +1080,12 @@ def _main(argv):
         mode = {"hide": "hidden", "clean": "see_through"}.get(argv[1], "auto")
         data = inpaint(argv[2], image, mask, prompt, progress=show, mode=mode)
         out = argv[5]
+    elif len(argv) >= 5 and argv[1] == "restore":
+        with open(argv[3], "rb") as f:
+            image = f.read()
+        burns = len(argv) > 5 and argv[5] == "burns"
+        data = restore(argv[2], image, burns, progress=show)
+        out = argv[4]
     elif len(argv) >= 4 and argv[1] == "generate":
         width, height = 1024, 1024
         if len(argv) > 4:
