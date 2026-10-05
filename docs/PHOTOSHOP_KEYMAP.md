@@ -22,6 +22,19 @@ entries like in Photoshop.
   |---|---|---|
   | `Ctrl+Alt+E` | File > Overwrite | `file-overwrite` |
   | `Ctrl+Alt+Shift+W` | File > Export As… | `file-export-as` |
+  | `Ctrl+Shift+Tab` | Windows > Previous Image | `windows-show-display-previous` |
+
+  | `Ctrl+Tab` | Windows > Next Image | `windows-show-display-next` |
+  | `U` | Tools > Shape Tool… | `shape-tool` (the [Shape Tool](SHAPE_TOOL.md) plug-in) |
+
+  On the canvas GIMP hard-wires `Ctrl+Tab` to its layer picker (and
+  `Alt+Tab`, which the desktop's window switcher takes, to the next
+  image) before any shortcut is looked up. `features/gimp-tab-keys.sh`
+  installs a small X11 helper, started with the desktop session, that
+  turns `Ctrl+Tab` / `Ctrl+Shift+Tab` into `Ctrl(+Shift)+XF86Launch5`
+  while a GIMP window is focused; both actions carry that second
+  accelerator (several accelerators per extras entry are separated by
+  commas). Other windows keep their own `Ctrl+Tab`.
 
   To add your own, append `'action|binding|comment'` entries to the array
   in `features/photoshop-keymap.sh` (empty binding = unbind). Pick a

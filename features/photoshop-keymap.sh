@@ -21,7 +21,7 @@
 # that makes GIMP abort parsing there
 # and ignore the rest of the file.
 #
-# Two extra bindings are layered on top
+# Extra bindings are layered on top
 # of the upstream keymap (see
 # PHOTOSHOP_KEYMAP_EXTRAS below), for
 # GIMP-only actions only — nothing the
@@ -67,6 +67,16 @@ PHOTOSHOP_KEYMAP_EXTRAS=(
     # Modifiers in GIMP's canonical order (Primary, Shift, Alt) so the
     # line survives GIMP's own rewrites byte-identically:
     'file-export-as|<Primary><Shift><Alt>w|File > Export As (Photoshop Export As shortcut)'
+    # Image tabs like Photoshop (Ctrl+Tab / Ctrl+Shift+Tab). Alt+Tab
+    # belongs to the desktop's window switcher.
+    'windows-show-display-previous|<Primary><Shift>Tab,<Primary><Shift>XF86Launch5|Windows > Previous Image (Photoshop Ctrl+Shift+Tab)'
+    # On the canvas GIMP hard-wires Ctrl+Tab to its layer picker, before any
+    # shortcut: assets/launcher/gimp-tab-keys turns Ctrl+Tab into
+    # Ctrl+XF86Launch5 (a key no keyboard here has) while GIMP is focused.
+    'windows-show-display-next|<Primary>Tab,<Primary>XF86Launch5|Windows > Next Image (Photoshop Ctrl+Tab)'
+    # Photoshop's U: the Shape Tool plug-in (features/shape-tool.sh); free
+    # in the upstream keymap and in GIMP's defaults.
+    'shape-tool|u|Tools > Shape Tool (Photoshop U)'
 )
 
 ########################################
@@ -101,6 +111,25 @@ sanitize_shortcutsrc() {
 # Arguments:
 #   $1 - shortcutsrc path
 ########################################
+########################################
+# Prints the accelerators of an extras
+# entry as shortcutsrc strings: several
+# accelerators for one action are
+# separated by commas in the entry.
+#
+# Arguments:
+#   $1 - binding field
+########################################
+keymap_bindings_sexp() {
+    local out="" accel
+    local -a accels
+    IFS=',' read -ra accels <<< "$1"
+    for accel in "${accels[@]}"; do
+        out="${out:+$out }\"$accel\""
+    done
+    printf '%s' "$out"
+}
+
 apply_keymap_extras() {
     local rc="$1"
     local entry action binding comment
@@ -120,7 +149,7 @@ apply_keymap_extras() {
         for entry in "${PHOTOSHOP_KEYMAP_EXTRAS[@]}"; do
             IFS='|' read -r action binding comment <<< "$entry"
             if [[ -n "$binding" ]]; then
-                printf '(action "%s" "%s")  # %s\n' "$action" "$binding" "$comment"
+                printf '(action "%s" %s)  # %s\n' "$action" "$(keymap_bindings_sexp "$binding")" "$comment"
             else
                 printf '(action "%s")  # %s\n' "$action" "$comment"
             fi
@@ -151,7 +180,7 @@ keymap_extras_applied() {
     for entry in "${PHOTOSHOP_KEYMAP_EXTRAS[@]}"; do
         IFS='|' read -r action binding comment <<< "$entry"
         if [[ -n "$binding" ]]; then
-            expected="(action \"$action\" \"$binding\")"
+            expected="(action \"$action\" $(keymap_bindings_sexp "$binding"))"
         else
             expected="(action \"$action\")"
         fi

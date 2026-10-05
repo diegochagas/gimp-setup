@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""gimp-tab-keys: Ctrl+Tab / Ctrl+Shift+Tab switch GIMP's image tabs, like
+Photoshop (X11).
+
+On the canvas GIMP hard-wires Ctrl+Tab to its layer picker (and Alt+Tab,
+which the desktop takes, to the next image) before any shortcut is looked
+up, so no shortcutsrc entry can change it. While a GIMP window is focused,
+this helper grabs Ctrl+Tab and Ctrl+Shift+Tab, lets go of the keyboard and
+sends XF86Launch5 instead, a key no keyboard here has; with Ctrl (and
+Shift) still held GIMP sees Ctrl+XF86Launch5 / Ctrl+Shift+XF86Launch5,
+which features/photoshop-keymap.sh binds to Windows > Next / Previous
+Image. With any other window focused nothing is grabbed.
+
+Runs as the gimp-tab-keys systemd user service (features/gimp-tab-keys.sh).
+Needs python3-xlib and the XTEST extension.
+"""
+
+import sys
+
+from Xlib import X, XK, display, error
+from Xlib.ext import xtest
+
+XK.load_keysym_group("xf86")
+
+LOCKS = (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask)    # Caps / Num Lock
+MODIFIERS = (X.ControlMask, X.ControlMask | X.ShiftMask)
+SEND_KEY = "XF86Launch5"
+
+
+def main():
+    d = display.Display()
+    if not d.has_extension("XTEST"):
+        print("gimp-tab-keys: the X server has no XTEST extension", file=sys.stderr)
+        return 1
+    root = d.screen().root
+    active_atom = d.intern_atom("_NET_ACTIVE_WINDOW")
+    tab = d.keysym_to_keycode(XK.string_to_keysym("Tab"))
+    send = d.keysym_to_keycode(XK.string_to_keysym("XF86_" + SEND_KEY[4:]))  # python-xlib spells it XF86_Launch5
+    if not tab or not send:
+        print("gimp-tab-keys: Tab or %s is not in the keymap" % SEND_KEY, file=sys.stderr)
+        return 1
+    root.change_attributes(event_mask=X.PropertyChangeMask)
+
+    def gimp_focused():
+        try:
+            prop = root.get_full_property(active_atom, X.AnyPropertyType)
+            if not prop or not prop.value or not prop.value[0]:
+                return False
+            cls = d.create_resource_object("window", prop.value[0]).get_wm_class()
+        except error.XError:
+            return False
+        return bool(cls) and any("gimp" in c.lower() for c in cls)
+
+    grabbed = False
+
+    def set_grab(on):
+        nonlocal grabbed
+        if on == grabbed:
+            return
+        for mods in MODIFIERS:
+            for lock in LOCKS:
+                if on:
+                    root.grab_key(tab, mods | lock, True, X.GrabModeAsync, X.GrabModeAsync)
+                else:
+                    root.ungrab_key(tab, mods | lock)
+        d.flush()
+        grabbed = on
+
+    set_grab(gimp_focused())
+    while True:
+        e = d.next_event()
+        if e.type == X.PropertyNotify and e.atom == active_atom:
+            set_grab(gimp_focused())
+        elif e.type == X.KeyPress and e.detail == tab:
+            # the passive grab became an active one: hand the keyboard back
+            # to GIMP, then type the stand-in key into it
+            d.ungrab_keyboard(X.CurrentTime)
+            d.sync()
+            xtest.fake_input(d, X.KeyPress, send)
+            xtest.fake_input(d, X.KeyRelease, send)
+            d.sync()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
