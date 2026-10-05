@@ -77,6 +77,13 @@ PHOTOSHOP_KEYMAP_EXTRAS=(
     # Photoshop's U: the Shape Tool plug-in (features/shape-tool.sh); free
     # in the upstream keymap and in GIMP's defaults.
     'shape-tool|u|Tools > Shape Tool (Photoshop U)'
+    # Photoshop's Ctrl+J / Ctrl+Shift+J: the layer-via plug-in
+    # (features/layer-via.sh) makes real layers; the upstream keymap had
+    # them on Select > Float (a floating selection), unbound here.
+    'select-copy-float||Select > Float copy (Ctrl+J is Layer via Copy)'
+    'select-cut-float||Select > Float (Ctrl+Shift+J is Layer via Cut)'
+    'layer-via-copy|<Primary>j|Layer > Layer via Copy (Photoshop Ctrl+J)'
+    'layer-via-cut|<Primary><Shift>j|Layer > Layer via Cut (Photoshop Ctrl+Shift+J)'
 )
 
 ########################################

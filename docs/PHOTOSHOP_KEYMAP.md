@@ -26,6 +26,9 @@ entries like in Photoshop.
 
   | `Ctrl+Tab` | Windows > Next Image | `windows-show-display-next` |
   | `U` | Tools > Shape Tool… | `shape-tool` (the [Shape Tool](SHAPE_TOOL.md) plug-in) |
+  | `Ctrl+J` | Layer > Layer via Copy | `layer-via-copy` (the [Layer via Copy / Cut](LAYER_VIA.md) plug-in) |
+  | `Ctrl+Shift+J` | Layer > Layer via Cut | `layer-via-cut` (same plug-in) |
+  | — | Select > Float | `select-copy-float`, `select-cut-float`: the upstream keymap's Ctrl+J / Ctrl+Shift+J, unbound |
 
   On the canvas GIMP hard-wires `Ctrl+Tab` to its layer picker (and
   `Alt+Tab`, which the desktop's window switcher takes, to the next
