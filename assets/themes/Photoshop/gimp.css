@@ -1,0 +1,321 @@
+/* Photoshop theme for GIMP 3
+ *
+ * A theme modelled on Adobe Photoshop's default "medium gray"
+ * interface: #535353 panels, darker tab strips and fields, flat
+ * borderless icon buttons and a blue accent for selection and focus.
+ *
+ * It reuses GIMP's own Default theme for every widget rule and only
+ * changes the colors plus a set of Photoshop-style overrides below.
+ * @DEFAULT_THEME_DIR@ is replaced by features/photoshop-theme.sh with
+ * the Default theme folder of the installed GIMP (Flatpak or native).
+ *
+ * Debugging: File > Debug > Start GtkInspector shows the widget tree
+ * and lets you try CSS live.
+ */
+
+/* Photoshop palette. */
+@define-color ps-panel        rgb(83,83,83);   /* #535353 panels        */
+@define-color ps-strip        rgb(66,66,66);   /* #424242 tab strips    */
+@define-color ps-field        rgb(69,69,69);   /* #454545 inputs        */
+@define-color ps-canvas       rgb(40,40,40);   /* #282828 pasteboard    */
+@define-color ps-row-selected rgb(107,107,107);/* #6b6b6b active layer  */
+@define-color ps-hover        rgb(96,96,96);   /* #606060               */
+@define-color ps-line         rgb(52,52,52);   /* #343434 separators    */
+@define-color ps-accent       rgb(20,115,230); /* #1473e6 Adobe blue   */
+@define-color ps-icon         rgb(190,190,190);
+
+/* Colors the Default theme rules read. */
+@define-color fg-color               rgb(222,222,222);
+@define-color bg-color               @ps-panel;
+@define-color border-color           @ps-line;
+@define-color dimmed-fg-color        rgb(170,170,170);
+@define-color disabled-fg-color      rgb(140,140,140);
+@define-color disabled-button-color  rgb(115,115,115);
+@define-color hover-color            @ps-hover;
+@define-color widget-bg-color        @ps-field;
+@define-color selected-color         @ps-row-selected;
+@define-color extreme-bg-color       @ps-panel;
+@define-color extreme-selected-color @ps-row-selected;
+@define-color strong-border-color    @ps-line;
+@define-color stronger-border-color  rgb(60,60,60);
+@define-color edge-border-color      @ps-line;
+@define-color scrollbar-slider-color rgb(120,120,120);
+@define-color scrollbar-trough-color @ps-panel;
+@define-color ruler-color            @ps-strip;
+
+@import url("file://@DEFAULT_THEME_DIR@/common-dark.css");
+
+/* ------------------------------------------------------------------
+ * Menus: colours only. GTK 3 sizes a menu once, when it opens; any
+ * padding, border or min-height here (on the menu or its items) differs
+ * from what the system theme gives hovered items, so the open menu
+ * changes height under the pointer and GTK shrinks it behind scroll
+ * arrows.
+ * ------------------------------------------------------------------ */
+menubar, #image-menubar {
+  background-color: @ps-panel;
+}
+
+menu, .menu, .context-menu {
+  background-color: @ps-strip;
+}
+
+menubar > menuitem:hover, menu menuitem:hover {
+  background-color: @ps-accent;
+  color: white;
+}
+
+menu menuitem accelerator {
+  color: @dimmed-fg-color;
+}
+
+menu menuitem:hover accelerator {
+  color: white;
+}
+
+/* ------------------------------------------------------------------
+ * Image tabs and dock tabs: a dark strip with the active tab taking
+ * the panel color, like Photoshop's document and panel tabs.
+ * ------------------------------------------------------------------ */
+notebook header {
+  background-color: @ps-strip;
+  border-bottom: 1px solid @ps-line;
+}
+
+notebook header tabs tab {
+  background-color: @ps-strip;
+  border: none;
+  border-right: 1px solid @ps-line;
+  margin: 0;
+  min-height: 24px;
+  padding: 0 6px;
+  color: @dimmed-fg-color;
+}
+
+notebook header tabs tab:hover {
+  background-color: rgb(74,74,74);
+  color: @fg-color;
+}
+
+notebook header tabs tab:checked {
+  background-color: @ps-panel;
+  box-shadow: none;
+  color: @fg-color;
+}
+
+notebook stack {
+  background-color: @ps-panel;
+}
+
+/* ------------------------------------------------------------------
+ * Toolbox: flat buttons, highlighted tool on a lighter tile.
+ * ------------------------------------------------------------------ */
+toolbutton button.flat,
+toolbutton button.flat:hover {
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 3px;
+}
+
+toolbutton button.flat:hover {
+  background-color: @ps-hover;
+}
+
+toolbutton button.flat:checked,
+toolbutton button.flat:checked:hover {
+  background-color: @ps-canvas;
+  border-color: @ps-canvas;
+}
+
+/* ------------------------------------------------------------------
+ * Dockable footers (the button row under Layers, Channels, Paths,
+ * Brushes...): Photoshop draws these as a slim bar of small,
+ * borderless grey glyphs that only light up on hover.
+ * ------------------------------------------------------------------ */
+GimpEditor > box.horizontal:last-child,
+GimpEditor > buttonbox {
+  background-color: @ps-panel;
+  border-top: 1px solid @ps-line;
+  padding: 2px 4px;
+}
+
+GimpEditor button,
+GimpEditor button:not(.flat) {
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  box-shadow: none;
+  min-height: 20px;
+  min-width: 20px;
+  padding: 1px;
+  -gtk-icon-transform: scale(0.85);
+}
+
+GimpEditor button image {
+  color: @ps-icon;
+}
+
+GimpEditor button:hover {
+  background-color: @ps-hover;
+  border-color: @ps-hover;
+}
+
+GimpEditor button:hover image {
+  color: white;
+}
+
+GimpEditor button:active,
+GimpEditor button:checked {
+  background-color: @ps-field;
+  border-color: @ps-line;
+}
+
+GimpEditor button:disabled image {
+  color: @disabled-button-color;
+}
+
+/* ------------------------------------------------------------------
+ * Lists (Layers, Channels, Paths): flat rows, lighter grey for the
+ * active layer, thin separators between rows.
+ * ------------------------------------------------------------------ */
+GimpContainerTreeView .view,
+GimpContainerTreeView treeview.view {
+  background-color: @ps-panel;
+  border-bottom: 1px solid @ps-line;
+}
+
+GimpContainerTreeView treeview.view:selected,
+.view row:selected,
+.view:selected {
+  background-color: @ps-row-selected;
+  color: white;
+}
+
+.view selection, entry selection, textview text selection {
+  background-color: @ps-accent;
+  color: white;
+}
+
+/* ------------------------------------------------------------------
+ * Fields, combo boxes and buttons
+ * ------------------------------------------------------------------ */
+entry, spinbutton, combobox button, GimpSpinScale entry {
+  background-color: @ps-field;
+  border: 1px solid @ps-line;
+  border-radius: 2px;
+}
+
+entry:focus, entry:focus-within,
+spinbutton:focus-within, GimpSpinScale entry:focus {
+  border-color: @ps-accent;
+  box-shadow: none;
+}
+
+GimpSpinScale entry progress {
+  background-color: rgb(100,100,100);
+}
+
+button:not(.flat) {
+  background-color: rgb(96,96,96);
+  border: 1px solid @ps-line;
+  border-radius: 3px;
+  box-shadow: none;
+}
+
+button:not(.flat):hover {
+  background-color: rgb(110,110,110);
+}
+
+button.suggested-action, button.default {
+  background-color: @ps-accent;
+  border-color: rgb(14,95,196);
+  color: white;
+}
+
+button.suggested-action:hover, button.default:hover {
+  background-color: rgb(38,128,235);
+}
+
+checkbutton check:checked, radiobutton radio:checked {
+  background-color: @ps-accent;
+  border-color: @ps-accent;
+  color: white;
+}
+
+/* Sliders: thin track, blue fill, small round knob. */
+scale contents trough {
+  background-color: @ps-field;
+  border: none;
+  min-height: 3px;
+  min-width: 3px;
+}
+
+scale contents trough highlight {
+  background-color: @ps-accent;
+  border-color: @ps-accent;
+}
+
+scale slider {
+  background-color: rgb(200,200,200);
+  border: 1px solid @ps-line;
+  border-radius: 50%;
+  min-height: 11px;
+  min-width: 11px;
+  margin: -5px;
+}
+
+progressbar trough progress {
+  background-color: @ps-accent;
+}
+
+/* ------------------------------------------------------------------
+ * Scrollbars: slim and dark.
+ * ------------------------------------------------------------------ */
+scrollbar slider {
+  background-color: @scrollbar-slider-color;
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+  min-width: 6px;
+  min-height: 6px;
+  margin: 0;
+}
+
+scrollbar slider:hover {
+  background-color: rgb(150,150,150);
+}
+
+/* ------------------------------------------------------------------
+ * Pane separators: plain dark gutters instead of handles.
+ * ------------------------------------------------------------------ */
+paned.horizontal > separator,
+paned.vertical > separator {
+  background-image: none;
+  background-color: @ps-line;
+  box-shadow: none;
+  min-width: 2px;
+  min-height: 2px;
+  padding: 0;
+}
+
+/* Pasteboard around the image and the empty image window. */
+GimpDisplayShell, #gimp-canvas, GimpCanvas {
+  background-color: @ps-canvas;
+}
+
+/* Rulers and status bar */
+GimpRuler {
+  background-color: @ps-strip;
+  color: @dimmed-fg-color;
+}
+
+GimpStatusbar, statusbar {
+  background-color: @ps-strip;
+  color: @dimmed-fg-color;
+}
+
+tooltip, tooltip.background {
+  background-color: @ps-strip;
+  border: 1px solid @ps-line;
+  color: @fg-color;
+}
