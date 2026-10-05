@@ -34,7 +34,11 @@ entries like in Photoshop.
   turns `Ctrl+Tab` / `Ctrl+Shift+Tab` into `Ctrl(+Shift)+XF86Launch5`
   while a GIMP window is focused; both actions carry that second
   accelerator (several accelerators per extras entry are separated by
-  commas). Other windows keep their own `Ctrl+Tab`.
+  commas). Other windows keep their own `Ctrl+Tab`, and so do other GIMP
+  builds with the same window class (e.g. GIMPhoto): the helper only acts
+  on the official `org.gimp.GIMP` Flatpak or a GIMP installed without
+  Flatpak, telling them apart by the window's process (X server XRes +
+  the process' cgroup).
 
   To add your own, append `'action|binding|comment'` entries to the array
   in `features/photoshop-keymap.sh` (empty binding = unbind). Pick a

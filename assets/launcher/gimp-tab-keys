@@ -18,13 +18,37 @@ Needs python3-xlib and the XTEST extension.
 import sys
 
 from Xlib import X, XK, display, error
-from Xlib.ext import xtest
+from Xlib.ext import res, xtest
 
 XK.load_keysym_group("xf86")
 
 LOCKS = (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask)    # Caps / Num Lock
 MODIFIERS = (X.ControlMask, X.ControlMask | X.ShiftMask)
 SEND_KEY = "XF86Launch5"
+# The GIMP this helper is for: the official Flatpak, or a GIMP installed
+# without Flatpak. Other GIMP builds with the same window class (such as
+# GIMPhoto, io.github.diegochagas.GIMPhoto) have their own shortcuts.
+GIMP_FLATPAK_ID = "org.gimp.GIMP"
+
+
+def flatpak_app(d, window):
+    """Flatpak app ID of the process that owns window ("" when it is not a
+    Flatpak app or the X server cannot tell). Sandboxed apps set no
+    _NET_WM_PID, so ask the X server (XRes) and read the process' cgroup."""
+    try:
+        reply = d.res_query_client_ids([{"client": window, "mask": res.LocalClientPIDMask}])
+        pid = next((c.value[0] for c in reply.ids if c.value), None)
+        if not pid:
+            return ""
+        with open("/proc/%d/cgroup" % pid) as f:
+            cgroup = f.read()
+    except (error.XError, OSError, AttributeError):
+        return ""
+    marker = "app-flatpak-"
+    if marker not in cgroup:
+        return ""
+    # app-flatpak-<app id>-<number>.scope
+    return cgroup.split(marker, 1)[1].split(".scope", 1)[0].rsplit("-", 1)[0]
 
 
 def main():
@@ -49,7 +73,10 @@ def main():
             cls = d.create_resource_object("window", prop.value[0]).get_wm_class()
         except error.XError:
             return False
-        return bool(cls) and any("gimp" in c.lower() for c in cls)
+        if not cls or not any("gimp" in c.lower() for c in cls):
+            return False
+        app = flatpak_app(d, prop.value[0])
+        return app in ("", GIMP_FLATPAK_ID)
 
     grabbed = False
 
