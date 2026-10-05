@@ -125,8 +125,15 @@ commands and guard direct file writes with `DRY_RUN`).
 | 40       | [`photoshop-keymap.sh`](features/photoshop-keymap.sh) | Photoshop keyboard shortcuts (shortcutsrc + controllerrc) | [PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md)     |
 | 40       | [`comfyui.sh`](features/comfyui.sh)                   | ComfyUI + FLUX.2 klein / Qwen-Image-Edit models (opt-in, ~42 GB) | [Local AI models](#local-ai-models-comfyui) |
 | 40       | [`slos-gimpainter.sh`](features/slos-gimpainter.sh)   | Painting brushes, dynamics and tool presets             | [SLOS_GIMPAINTER.md](docs/SLOS_GIMPAINTER.md)         |
+| 45       | [`photoshop-theme.sh`](features/photoshop-theme.sh)   | Photoshop look: theme, pasteboard colour, named dock tabs | [PHOTOSHOP_THEME.md](docs/PHOTOSHOP_THEME.md)       |
+| 46       | [`gimp-tab-keys.sh`](features/gimp-tab-keys.sh)       | Ctrl+Tab / Ctrl+Shift+Tab switch image tabs, also on the canvas (X11 helper) | [PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md) |
 | 50       | [`linuxbeaver.sh`](features/linuxbeaver.sh)           | LinuxBeaver GEGL effect plug-ins                        | [LINUXBEAVER.md](docs/LINUXBEAVER.md)                 |
-| 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The four AI plug-ins (fully local) + shared settings  | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
+| 55       | [`psd-text.sh`](features/psd-text.sh)                 | PSD open/export with editable text both ways (Type layers ⇄ GIMP text) | [PSD_TEXT.md](docs/PSD_TEXT.md)        |
+| 55       | [`layer-style.sh`](features/layer-style.sh)           | Layer > Layer Style: Photoshop's fx dialog (shadows, stroke, glows, bevel, overlays) | [LAYER_STYLE.md](docs/LAYER_STYLE.md) |
+| 55       | [`shape-tool.sh`](features/shape-tool.sh)             | Photoshop's shape tools (U): rectangle, ellipse, triangle, polygon, line, custom shapes as vector layers | [SHAPE_TOOL.md](docs/SHAPE_TOOL.md) |
+| 55       | [`smart-objects.sh`](features/smart-objects.sh)       | Layer > Smart Object: Convert / Edit / Replace Contents (link layers) | [SMART_OBJECTS.md](docs/SMART_OBJECTS.md) |
+| 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The five AI plug-ins (fully local) + shared settings  | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
+| 65       | [`comfyui-with-gimp.sh`](features/comfyui-with-gimp.sh) | Starts ComfyUI with GIMP, stops it when GIMP closes | [AI_PLUGINS.md](docs/AI_PLUGINS.md#fully-local-ai-comfyui) |
 
 The order matters: GIMP is installed first; PhotoGIMP layers its
 configuration on top; the Photoshop keymap runs after PhotoGIMP on purpose
@@ -174,14 +181,72 @@ backups (details and customization in
   `Ctrl+Alt+C` Canvas Size, `Ctrl+L` Levels, `Ctrl+E` Merge Down...
 - **Keymap Extras** — extra bindings for GIMP-only actions, layered on
   top through the `PHOTOSHOP_KEYMAP_EXTRAS` array on shortcuts nothing
-  else uses: `Ctrl+Alt+E` File > Overwrite and `Ctrl+Alt+Shift+W`
-  File > Export As.
+  else uses: `Ctrl+Alt+E` File > Overwrite, `Ctrl+Alt+Shift+W`
+  File > Export As and `Ctrl+Tab` / `Ctrl+Shift+Tab` next / previous
+  image tab as in Photoshop; on the canvas these need the small X11 helper
+  of `features/gimp-tab-keys.sh`, because GIMP hard-wires Ctrl+Tab there to
+  its layer picker.
+
+#### Photoshop Theme — `features/photoshop-theme.sh`
+
+A "Photoshop" GIMP theme modelled on Photoshop's medium gray interface
+(`#535353` panels, darker tab strips, flat borderless icon buttons, Adobe
+blue for selection and focus), Photoshop's `#282828` pasteboard around the
+image, and dock tabs that show their name (*Layers*, *Channels*, *Paths*)
+instead of only an icon. See [docs/PHOTOSHOP_THEME.md](docs/PHOTOSHOP_THEME.md).
+
+![GIMP with the Photoshop theme, editing the vertical text of a PSD](docs/images/photoshop-theme.jpg)
+
+#### PSD with editable text — `features/psd-text.sh`
+
+Opening a `.psd` turns its Type layers into GIMP text layers (and Layer
+Style strokes and shadows into Text Styling filters) instead of pixels;
+exporting to `.psd` writes GIMP text layers as Type layers Photoshop can
+still edit. Text rotated 90° opens as vertical text; tilted or squeezed text
+as a smart object, both still editable, and Layer Styles open as editable
+[Layer Styles](docs/LAYER_STYLE.md).
+
+![A PSD's vertical text opened with GIMP's Text tool, no rasterize prompt](docs/images/psd-text-vertical.jpg) Needs Node.js on the host. See [docs/PSD_TEXT.md](docs/PSD_TEXT.md).
+
+#### Smart Objects — `features/smart-objects.sh`
+
+*Layer > Smart Object > Convert to Smart Object / Edit Contents / Replace
+Contents*, on GIMP 3.2's link layers: non-destructive transforms, and
+saving the contents file updates every layer that shows it. See
+[docs/SMART_OBJECTS.md](docs/SMART_OBJECTS.md).
+
+![A normal layer and a smart object scaled to 15% and back](docs/images/smart-object.png)
+
+#### Layer Style — `features/layer-style.sh`
+
+Photoshop's Layer Style dialog (fx): *Layer > Layer Style > Blending
+Options… / Drop Shadow… / Stroke… / …*, with Photoshop's settings (angle,
+distance, spread, size, Use Global Light…), live preview, OK/Cancel as one
+undo step, Copy / Paste / Clear Layer Style. Every effect is a
+non-destructive filter, listed in the Layers panel's fx column. See
+[docs/LAYER_STYLE.md](docs/LAYER_STYLE.md).
+
+![The Layer Style dialog](docs/images/layer-style-dialog.png)
+
+![Every effect on a shape and on text](docs/images/layer-style-effects.png)
+
+#### Shape Tool — `features/shape-tool.sh`
+
+Photoshop's shape tools behind **U** (and *Tools > Shape Tool…*):
+Rectangle (corner radius), Ellipse, Triangle, Polygon (sides, star), Line
+and Custom Shape (heart, star, arrow, speech bubble, burst, check mark,
+lightning, cross), with fill and stroke, previewed live. The shape fills
+the current selection (or the middle of the image) and becomes a GIMP 3.2
+vector layer: crisp at any size, points editable with the Path tool, `U`
+on it edits it again. See [docs/SHAPE_TOOL.md](docs/SHAPE_TOOL.md).
+
+![The Shape Tool dialog](docs/images/shape-tool-dialog.png)
 
 GIMP must be closed while this feature runs.
 
 #### AI Plug-ins — `features/ai-plugins.sh`
 
-The four AI plug-ins, installed as one feature (details in
+The five AI plug-ins, installed as one feature (details in
 [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)). Everything runs on this machine:
 no account, no API key, nothing is uploaded.
 
@@ -200,6 +265,12 @@ no account, no API key, nothing is uploaded.
   burns) with the [photo-restore](https://github.com/diegochagas/photo-restore)
   method: the model's pixels are kept only where the print was damaged,
   as a new layer whose mask you can paint. Same two local models.
+- **AI Object Selection** — `Select > Object Selection (AI)` and
+  `Select > Subject (AI)`. Photoshop's Object Selection tool: draw a rough
+  rectangle or lasso around an object, run, and the selection snaps to it
+  (SAM 2.1, local).
+
+  ![A rough box around a mug becomes a selection of the mug](docs/images/object-selection.jpg)
 
 The shared settings from `config.sh` (the server URLs) are written for all
 of them, host and Flatpak sandbox alike. Earlier versions also offered
@@ -226,24 +297,32 @@ installs it; the whole feature is **skipped unless `COMFYUI_DIR` is set** in
   verified against the SHA-256 Hugging Face publishes for it and marked as
   verified so later runs do not re-hash it. An interrupted download resumes
   on the next run.
+- Adds the [SAM 2 nodes](https://github.com/kijai/ComfyUI-segment-anything-2)
+  (pinned commit) and gimp-setup's own `GimpSetupBBox` node
+  ([`assets/comfyui/custom_nodes`](assets/comfyui/custom_nodes)), used by
+  Object Selection.
 
   | Set | Models | Size | Good at |
   | --- | --- | --- | --- |
   | `qwen` | Qwen-Image-Edit-2511 (4-bit GGUF) + Qwen2.5-VL text encoder, VAE and the 4-step Lightning LoRA | ~22 GB | Best quality: instruction edits that keep characters and text consistent. ~100 s per 1 MP image on a 6 GB GPU |
   | `klein` | FLUX.2 klein 4B (fp8) + Qwen3-4B text encoder and VAE | ~12 GB | Three times faster (~35 s), lower quality on detailed art. The only one that also generates images from text |
+  | `sam` | SAM 2.1 large (fp16) | ~450 MB | Segment Anything: Object Selection / Select Subject, ~3 s per selection |
 
-  Both are installed by default (about 34 GB of models plus 8 GB for ComfyUI
-  and PyTorch, and it wants 45 GB free); name only one to save disk. Both
-  are Apache 2.0, so they can be used commercially.
+  All three are installed by default (about 35 GB of models plus 8 GB for
+  ComfyUI and PyTorch, and it wants 45 GB free); name only some to save
+  disk. All are Apache 2.0, so they can be used commercially.
 - Writes a `comfyui` **systemd user service** on
   `127.0.0.1:COMFYUI_PORT` (8188 by default). It is deliberately **not
   enabled at boot**: it holds GPU memory while it runs.
 
-ComfyUI has to be **running while the tools are used** — GIMP's Flatpak
-sandbox cannot start it; when it is down, the tools' error message shows
-the command that starts it. Start it before, and stop it when you are done: a
-loaded model keeps several GB of GPU memory and up to ~23 GB of RAM (Qwen)
-until the service stops.
+**ComfyUI starts and stops with GIMP** (`features/comfyui-with-gimp.sh`):
+the GIMP menu entry runs `gimp-with-comfyui`, which starts the service,
+runs GIMP and, once the last GIMP window closes, stops it again, freeing
+the GPU memory and the up to ~23 GB of RAM a loaded model (Qwen) holds. A
+tool used while ComfyUI is still booting waits for it. A ComfyUI you
+started yourself keeps running after GIMP closes.
+`COMFYUI_START_WITH_GIMP=no` turns this off; then start it by hand (GIMP's
+Flatpak sandbox cannot), as below.
 
 ```bash
 systemctl --user start comfyui     # then open http://127.0.0.1:8188

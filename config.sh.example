@@ -49,10 +49,12 @@ COMFYUI_DIR="${COMFYUI_DIR:-}"
 #           what comic-skills uses to erase text over art.
 #   klein - FLUX.2 klein 4B, ~12 GB. Faster, lower quality;
 #           the only one that generates images from text.
+#   sam   - SAM 2.1 large, ~450 MB. Segment Anything, for
+#           Select > Object Selection (AI) / Subject (AI).
 #
-# Both by default. Leave empty to install ComfyUI without any model.
+# All three by default. Leave empty to install ComfyUI without any model.
 #
-COMFYUI_MODEL_SETS="${COMFYUI_MODEL_SETS-qwen,klein}"
+COMFYUI_MODEL_SETS="${COMFYUI_MODEL_SETS-qwen,klein,sam}"
 
 #
 # Port the ComfyUI user service listens on (127.0.0.1 only).
@@ -80,3 +82,21 @@ COMFYUI_TORCH_INDEX_URL="${COMFYUI_TORCH_INDEX_URL:-https://download.pytorch.org
 # sandbox copies); Filters > AI > Settings can still override it.
 #
 COMFYUI_URL="${COMFYUI_URL:-}"
+
+#
+# Photoshop text language for the PSD editable-text plug-in
+# (features/psd-text.sh): written to the Type layers of an exported PSD
+# whose GIMP text layer has no language of its own. It drives Photoshop's
+# spell check and hyphenation (Character panel > language).
+#
+# en-us (default), pt-br, pt, or an Adobe text engine code number.
+#
+PSD_TEXT_LANGUAGE="${PSD_TEXT_LANGUAGE:-en-us}"
+
+#
+# Start ComfyUI together with GIMP (features/comfyui-with-gimp.sh): the GIMP
+# menu entry starts the `comfyui` service, and closing GIMP stops it again
+# (only when it was the launcher that started it). Needs COMFYUI_DIR.
+# "no" restores the plain GIMP launcher; then start ComfyUI by hand.
+#
+COMFYUI_START_WITH_GIMP="${COMFYUI_START_WITH_GIMP:-yes}"
