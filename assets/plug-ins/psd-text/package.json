@@ -1,0 +1,9 @@
+{
+  "name": "psd-text",
+  "private": true,
+  "description": "Node deps of the GIMP 'PSD with editable text' plug-in: ag-psd reads Photoshop text layers + layer styles and writes them back.",
+  "type": "module",
+  "dependencies": {
+    "ag-psd": "^31.0.2"
+  }
+}
