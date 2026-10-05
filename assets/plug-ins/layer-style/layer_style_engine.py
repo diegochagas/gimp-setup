@@ -261,6 +261,13 @@ def remove_filters(layer):
 def apply_style(layer, style):
     """Replace the layer's Layer Style filters by those of style."""
     remove_filters(layer)
+    # Shadows, glows and outside strokes paint where the layer is transparent;
+    # a layer without an alpha channel (an image opened from a JPEG or an
+    # opaque PNG) would show them as solid black instead. Photoshop layers
+    # always have transparency: give the layer an alpha channel, as Layer >
+    # Transparency > Add Alpha Channel does.
+    if any(s.get("enabled") for s in style.values()) and not layer.has_alpha():
+        layer.add_alpha()
     for key in RENDER_ORDER:
         s = style.get(key)
         if not s or not s.get("enabled"):
