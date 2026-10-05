@@ -166,6 +166,13 @@ feature_install() {
 
         run cp -a "$payload/." "$dir/"
 
+        # PhotoGIMP's sessionrc still names the Paths dockable as GIMP 2.10
+        # did (gimp-vectors-list); GIMP 3 calls it gimp-path-list and drops
+        # the unknown one, so the Paths tab went missing from the Layers dock.
+        if [[ -f "$dir/sessionrc" ]]; then
+            run sed -i 's/"gimp-vectors-list"/"gimp-path-list"/' "$dir/sessionrc"
+        fi
+
         # The release ships a pluginrc cache from GIMP 3.0, which newer
         # GIMPs reject ("wrong protocol version"). Removing it makes
         # GIMP silently re-scan the plug-ins on the next start.

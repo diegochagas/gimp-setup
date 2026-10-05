@@ -41,3 +41,9 @@ reinstall into that profile.
 - PhotoGIMP may overwrite matching GIMP configuration files — that is the
   point — which is why it runs after the other plug-in features and why the
   keymap/AI features run after it.
+- PhotoGIMP's `sessionrc` names the Paths dockable as GIMP 2.10 did
+  (`gimp-vectors-list`); GIMP 3 calls it `gimp-path-list` and drops the
+  unknown one, so the Paths tab went missing from the Layers dock. The
+  feature renames it after copying PhotoGIMP's files. A profile installed
+  before that fix: *Windows → Dockable Dialogs → Paths* and drag it next to
+  Channels.
