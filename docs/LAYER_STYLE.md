@@ -71,3 +71,6 @@ back as the matching Photoshop effect with the same settings:
 - Fill Opacity (inner opacity separate from the effects) is not available.
 - Opening the dialog needs one selected layer; the menu entries are grey
   otherwise.
+- GIMP crops a filter to the selection there is when it is added, so the
+  plug-in sets the selection aside while it adds the effects and then puts
+  it back: as in Photoshop, a selection never hides or clips them.

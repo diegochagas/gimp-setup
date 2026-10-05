@@ -268,19 +268,33 @@ def apply_style(layer, style):
     # Transparency > Add Alpha Channel does.
     if any(s.get("enabled") for s in style.values()) and not layer.has_alpha():
         layer.add_alpha()
-    for key in RENDER_ORDER:
-        s = style.get(key)
-        if not s or not s.get("enabled"):
-            continue
-        for op, props, blend, opacity in filter_specs(layer, key, {**DEFAULTS[key], **s}):
-            f = Gimp.DrawableFilter.new(layer, op, PREFIX + LABELS[key])
-            if f is None:
+    # GIMP crops a filter to the selection there is when it is added, and
+    # keeps that crop after the selection changes: with a selection, the
+    # effects showed only inside it, or not at all. Photoshop's layer styles
+    # ignore the selection; set it aside while the effects are added.
+    image = layer.get_image()
+    saved = None
+    if not Gimp.Selection.is_empty(image):
+        saved = Gimp.Selection.save(image)
+        Gimp.Selection.none(image)
+    try:
+        for key in RENDER_ORDER:
+            s = style.get(key)
+            if not s or not s.get("enabled"):
                 continue
-            cfg = f.get_config()
-            for prop, value in props.items():
-                _set(op, cfg, prop, value)
-            f.set_blend_mode(GIMP_MODE.get(blend, Gimp.LayerMode.NORMAL))
-            f.set_opacity(max(0.0, min(1.0, opacity)))
-            f.update()
-            layer.append_filter(f)
+            for op, props, blend, opacity in filter_specs(layer, key, {**DEFAULTS[key], **s}):
+                f = Gimp.DrawableFilter.new(layer, op, PREFIX + LABELS[key])
+                if f is None:
+                    continue
+                cfg = f.get_config()
+                for prop, value in props.items():
+                    _set(op, cfg, prop, value)
+                f.set_blend_mode(GIMP_MODE.get(blend, Gimp.LayerMode.NORMAL))
+                f.set_opacity(max(0.0, min(1.0, opacity)))
+                f.update()
+                layer.append_filter(f)
+    finally:
+        if saved is not None:
+            image.select_item(Gimp.ChannelOps.REPLACE, saved)
+            image.remove_channel(saved)
     write_style(layer, style)
