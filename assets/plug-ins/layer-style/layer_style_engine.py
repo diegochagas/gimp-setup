@@ -41,7 +41,9 @@ LABELS = dict(EFFECTS)
 
 # order the filters are applied in: what is painted inside the layer first,
 # then the bevel and the stroke on top, then what spreads outside it
-RENDER_ORDER = ["color_overlay", "gradient_overlay", "pattern_overlay", "inner_glow",
+# Photoshop stacks Color Overlay over Gradient Overlay over Pattern Overlay:
+# the first filter added is the lowest
+RENDER_ORDER = ["pattern_overlay", "gradient_overlay", "color_overlay", "inner_glow",
                 "inner_shadow", "bevel", "stroke", "outer_glow", "drop_shadow"]
 
 # Photoshop's defaults for a newly enabled effect

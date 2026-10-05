@@ -4,6 +4,13 @@
 ![License](https://img.shields.io/github/license/diegochagas/homelab-backup)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 
+> **Want the full Photoshop experience?** Use
+> [GIMPhoto](https://github.com/diegochagas/gimphoto), a fork of GIMP with
+> Photoshop's tools and interface built in (fx button and effects in the
+> Layers panel, shape tools in the toolbox, Photoshop's shortcuts and
+> layout), installed next to the official GIMP. gimp-setup adds what a
+> plug-in can to the GIMP you already have.
+
 One-command installer for the complete GIMP ecosystem on Linux:
 Flatpak GIMP 3, plug-ins, brushes, presets and extra features such as
 Photoshop-style shortcuts and fully local AI tools.
@@ -131,6 +138,7 @@ commands and guard direct file writes with `DRY_RUN`).
 | 55       | [`psd-text.sh`](features/psd-text.sh)                 | PSD open/export with editable text both ways (Type layers ⇄ GIMP text) | [PSD_TEXT.md](docs/PSD_TEXT.md)        |
 | 55       | [`layer-style.sh`](features/layer-style.sh)           | Layer > Layer Style: Photoshop's fx dialog (shadows, stroke, glows, bevel, overlays) | [LAYER_STYLE.md](docs/LAYER_STYLE.md) |
 | 55       | [`shape-tool.sh`](features/shape-tool.sh)             | Photoshop's shape tools (U): rectangle, ellipse, triangle, polygon, line, custom shapes as vector layers | [SHAPE_TOOL.md](docs/SHAPE_TOOL.md) |
+| 55       | [`layer-via.sh`](features/layer-via.sh)               | Layer via Copy / Cut (Ctrl+J / Ctrl+Shift+J): a new layer from the selected area, in place | [LAYER_VIA.md](docs/LAYER_VIA.md) |
 | 55       | [`smart-objects.sh`](features/smart-objects.sh)       | Layer > Smart Object: Convert / Edit / Replace Contents (link layers) | [SMART_OBJECTS.md](docs/SMART_OBJECTS.md) |
 | 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The five AI plug-ins (fully local) + shared settings  | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
 | 65       | [`comfyui-with-gimp.sh`](features/comfyui-with-gimp.sh) | Starts ComfyUI with GIMP, stops it when GIMP closes | [AI_PLUGINS.md](docs/AI_PLUGINS.md#fully-local-ai-comfyui) |
@@ -243,6 +251,13 @@ on it edits it again. See [docs/SHAPE_TOOL.md](docs/SHAPE_TOOL.md).
 ![The Shape Tool dialog](docs/images/shape-tool-dialog.png)
 
 GIMP must be closed while this feature runs.
+
+#### Layer via Copy / Cut — `features/layer-via.sh`
+
+Photoshop's **Ctrl+J** / **Ctrl+Shift+J**: with a selection, a new layer
+with only the selected area, in place (Cut also clears it from the
+original); without one, Ctrl+J duplicates the layer. See
+[docs/LAYER_VIA.md](docs/LAYER_VIA.md).
 
 #### AI Plug-ins — `features/ai-plugins.sh`
 
