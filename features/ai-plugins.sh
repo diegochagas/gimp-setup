@@ -4,7 +4,7 @@
 ########################################
 # Feature: AI Plug-ins
 #
-# Installs the four AI plug-ins as one
+# Installs the five AI plug-ins as one
 # feature, plus their shared settings:
 #
 #   WithoutBG
@@ -43,6 +43,12 @@
 #     a local model, kept only where
 #     the print was damaged, as a new
 #     layer with an editable mask.
+#
+#   AI Object Selection
+#     Select > Object Selection (AI) and
+#     Select > Subject (AI): Photoshop's
+#     Object Selection with SAM 2.1
+#     through ComfyUI.
 #
 #   ComfyUI client
 #     assets/plug-ins/comfyui/comfyui_client.py
@@ -312,6 +318,39 @@ ai_install_remove_selection() {
 }
 
 ########################################
+# AI Object Selection: Photoshop's Object
+# Selection tool and Select Subject, with
+# SAM 2.1 through ComfyUI.
+########################################
+ai_install_object_select() {
+    local sources=(
+        "$ASSETS_DIR/plug-ins/ai-object-select/ai-object-select.py"
+        "$AI_COMFYUI_CLIENT"
+    )
+
+    local src
+    for src in "${sources[@]}"; do
+        if ! file_exists "$src"; then
+            print_info "❌ Plug-in source not found at $src"
+            SUMMARY+=("AI Object Selection|❌ Missing assets")
+            return
+        fi
+    done
+
+    print_step "Installing AI Object Selection..."
+
+    local rc=0
+    ai_install_plugin "ai-object-select" "" "${sources[@]}" || rc=$?
+
+    if (( rc == 0 )); then
+        ai_refresh_pluginrc
+        SUMMARY+=("AI Object Selection|$INSTALLATION_MESSAGE")
+    else
+        SUMMARY+=("AI Object Selection|⏭️ Already installed")
+    fi
+}
+
+########################################
 # AI Restore Photo: repairs scanned photo
 # prints (the photo-restore method); the
 # damage mask is computed by
@@ -475,6 +514,8 @@ feature_install() {
     ai_install_remove_selection
 
     ai_install_restore_photo
+
+    ai_install_object_select
 
     ai_remove_online_settings
 

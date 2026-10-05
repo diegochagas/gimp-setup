@@ -111,6 +111,11 @@ RING_WIDTH = 48          # px (at work size) of the ring around the area
 TIMEOUT = 1800
 POLL_INTERVAL = 1.0
 
+# Seconds to wait for a local ComfyUI that GIMP's launcher started and that
+# is still booting (features/comfyui-with-gimp.sh writes the
+# "comfyui-autostart" setting); about 20 s on a warm disk.
+STARTUP_WAIT = 120
+
 FILL_PROMPT = (
     "A region of this image was smeared into a blurry smooth patch. "
     "Repaint that patch with: {prompt}. Blend it seamlessly with the rest "
@@ -225,9 +230,30 @@ def start_command():
     return "systemctl --user start %s" % unit
 
 
+def _is_local(url):
+    return (urllib.parse.urlsplit(url).hostname or "") in ("127.0.0.1", "localhost", "::1")
+
+
+def autostarted():
+    """True when GIMP's launcher starts and stops ComfyUI with GIMP."""
+    for path in _shared_file_paths("comfyui-autostart"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return f.read().strip().lower() in ("yes", "true", "1")
+        except OSError:
+            continue
+    return False
+
+
 def unreachable_message(url):
     host = urllib.parse.urlsplit(url).hostname or ""
-    if host in ("127.0.0.1", "localhost", "::1"):
+    if host in ("127.0.0.1", "localhost", "::1") and autostarted():
+        how = ("It is started together with GIMP, but did not answer within "
+               "%d s. See why with:\n\n    journalctl --user -u %s\n\nor "
+               "start it by hand with:\n\n    %s"
+               % (STARTUP_WAIT, os.environ.get("COMFYUI_SERVICE", "").strip() or SERVICE,
+                  start_command()))
+    elif host in ("127.0.0.1", "localhost", "::1"):
         how = ("Start it in a terminal with:\n\n    %s\n\nwait until "
                "%s opens in a browser (about 20 s), then run the tool "
                "again." % (start_command(), url))
@@ -239,10 +265,32 @@ def unreachable_message(url):
 
 # ---------------------------------------------------------------- HTTP layer
 
-def _request(url, data=None, headers=None, timeout=60):
+_server_seen = set()
+
+
+def _wait_for_server(base):
+    """A ComfyUI the launcher started with GIMP may still be booting: poll
+    until it answers (True) or STARTUP_WAIT runs out (False)."""
+    if base in _server_seen:
+        return False                    # it answered before: it went away
+    if not (_is_local(base) and autostarted()):
+        return False
+    deadline = time.time() + STARTUP_WAIT
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(base + "/system_stats", timeout=5):
+                _server_seen.add(base)
+                return True
+        except (urllib.error.URLError, OSError):
+            time.sleep(2)
+    return False
+
+
+def _request(url, data=None, headers=None, timeout=60, _retry=True):
     req = urllib.request.Request(url, data=data, headers=headers or {})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            _server_seen.add("/".join(url.split("/")[:3]))
             return resp.read()
     except urllib.error.HTTPError as e:
         try:
@@ -253,6 +301,8 @@ def _request(url, data=None, headers=None, timeout=60):
                            % (e.code, url, body[:600]))
     except (urllib.error.URLError, OSError):
         base = "/".join(url.split("/")[:3])
+        if _retry and _wait_for_server(base):
+            return _request(url, data, headers, timeout, _retry=False)
         raise ComfyUIError(unreachable_message(base))
 
 
@@ -1047,6 +1097,49 @@ def generate(prompt, width=1024, height=1024, url=None, progress=None,
     """Text-to-image (FLUX.2 klein). Returns PNG bytes."""
     url = get_url(url)
     graph = _generate_graph(url, prompt, _round16(width), _round16(height))
+    return _run(url, graph, progress, timeout)["out"]
+
+
+# SAM 2.1 (Segment Anything) through ComfyUI-segment-anything-2, for the
+# Object Selection tool; features/comfyui.sh installs the node, the model
+# (set "sam") and gimp-setup's own GimpSetupBBox node.
+SAM_MODEL = "sam2.1_hiera_large.safetensors"
+
+
+def _require_nodes(url, *nodes):
+    for node in nodes:
+        try:
+            info = json.loads(_request("%s/object_info/%s" % (url, node)))
+        except ComfyUIError as e:
+            if "HTTP 404" not in str(e):
+                raise
+            info = {}
+        if node not in info:
+            raise ComfyUIError(
+                "ComfyUI has no %s node. Re-run gimp-setup (features/"
+                "comfyui.sh installs it), then restart ComfyUI." % node)
+
+
+def segment(image_png, boxes, url=None, progress=None, timeout=TIMEOUT):
+    """Object mask for the object inside each [x1, y1, x2, y2] box (image
+    pixels), with SAM 2.1. Returns a grayscale PNG the size of the image:
+    white = object."""
+    url = get_url(url)
+    _require_nodes(url, "Sam2Segmentation", "GimpSetupBBox")
+    name = _upload(url, "object-select.png", image_png)
+    graph = {
+        "img": {"class_type": "LoadImage", "inputs": {"image": name}},
+        "box": {"class_type": "GimpSetupBBox",
+                "inputs": {"boxes": json.dumps([[round(v) for v in b] for b in boxes])}},
+        "sam": {"class_type": "DownloadAndLoadSAM2Model",
+                "inputs": {"model": SAM_MODEL, "segmentor": "single_image",
+                           "device": "cuda", "precision": "fp16"}},
+        "seg": {"class_type": "Sam2Segmentation",
+                "inputs": {"sam2_model": ["sam", 0], "image": ["img", 0],
+                           "keep_model_loaded": True, "bboxes": ["box", 0]}},
+        "m2i": {"class_type": "MaskToImage", "inputs": {"mask": ["seg", 0]}},
+        "out": {"class_type": "PreviewImage", "inputs": {"images": ["m2i", 0]}},
+    }
     return _run(url, graph, progress, timeout)["out"]
 
 

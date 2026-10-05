@@ -51,11 +51,17 @@ FEATURE_PRIORITY=40
 : "${COMFYUI_REPO:=https://github.com/comfyanonymous/ComfyUI.git}"
 : "${COMFYUI_GGUF_NODE_REPO:=https://github.com/city96/ComfyUI-GGUF.git}"
 : "${COMFYUI_TORCH_INDEX_URL:=https://download.pytorch.org/whl/cu128}"
-: "${COMFYUI_MODEL_SETS=qwen,klein}"
+: "${COMFYUI_MODEL_SETS=qwen,klein,sam}"
+: "${COMFYUI_SAM2_NODE_REPO:=https://github.com/kijai/ComfyUI-segment-anything-2.git}"
 : "${COMFYUI_PORT:=8188}"
 
 COMFYUI_MODELS_FILE="$ASSETS_DIR/comfyui/models.tsv"
 COMFYUI_SERVICE_UNIT="$HOME/.config/systemd/user/comfyui.service"
+# Pinned commit of ComfyUI-segment-anything-2 (SAM 2 nodes, used by the
+# Object Selection plug-in); bump it to update.
+COMFYUI_SAM2_NODE_COMMIT="0c35fff5f382803e2310103357b5e985f5437f32"
+# gimp-setup's own nodes (GimpSetupBBox), copied into custom_nodes/.
+COMFYUI_OWN_NODES_DIR="$ASSETS_DIR/comfyui/custom_nodes/gimp_setup_nodes"
 
 # The models are downloaded into a checkout that also holds PyTorch and
 # CUDA libraries (~8 GB) on top of them.
@@ -138,6 +144,50 @@ comfyui_install_gguf_node() {
     run "$(comfyui_python)" -m pip install -r "$node_dir/requirements.txt"
 
     SUMMARY+=("ComfyUI GGUF Node|$INSTALLATION_MESSAGE")
+}
+
+########################################
+# Installs the SAM 2 nodes (pinned) and
+# gimp-setup's own nodes, both needed by
+# the Object Selection plug-in. The SAM 2
+# nodes need no extra Python packages.
+########################################
+comfyui_install_sam_nodes() {
+    local node_dir="$COMFYUI_DIR/custom_nodes/ComfyUI-segment-anything-2"
+    local own_dir="$COMFYUI_DIR/custom_nodes/gimp_setup_nodes"
+    local changed=false
+
+    if ! comfyui_is_installed && [[ "$DRY_RUN" == false ]]; then
+        SUMMARY+=("ComfyUI SAM 2 Nodes|⏭️ ComfyUI not installed")
+        return 0
+    fi
+
+    if ! directory_exists "$node_dir/.git"; then
+        run git clone "$COMFYUI_SAM2_NODE_REPO" "$node_dir"
+        changed=true
+    fi
+    if [[ "$DRY_RUN" == true ]] ||
+       [[ "$(git -C "$node_dir" rev-parse HEAD 2> /dev/null)" != "$COMFYUI_SAM2_NODE_COMMIT" ]]; then
+        run git -C "$node_dir" fetch --quiet origin
+        run git -C "$node_dir" checkout --quiet "$COMFYUI_SAM2_NODE_COMMIT"
+        changed=true
+    fi
+
+    if ! diff -rq "$COMFYUI_OWN_NODES_DIR" "$own_dir" -x __pycache__ > /dev/null 2>&1; then
+        run mkdir -p "$own_dir"
+        run cp -r "$COMFYUI_OWN_NODES_DIR/." "$own_dir/"
+        changed=true
+    fi
+
+    if [[ "$changed" == true ]]; then
+        # A running ComfyUI only loads nodes at start.
+        if systemctl --user is-active --quiet comfyui 2> /dev/null; then
+            run systemctl --user restart comfyui
+        fi
+        SUMMARY+=("ComfyUI SAM 2 Nodes|$INSTALLATION_MESSAGE")
+    else
+        SUMMARY+=("ComfyUI SAM 2 Nodes|⏭️ Already installed")
+    fi
 }
 
 ########################################
@@ -349,6 +399,9 @@ feature_install() {
 
     print_step "Installing the ComfyUI-GGUF node..."
     comfyui_install_gguf_node
+
+    print_step "Installing the SAM 2 nodes (Object Selection)..."
+    comfyui_install_sam_nodes
 
     print_step "Downloading the ComfyUI models..."
     comfyui_configure_models

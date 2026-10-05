@@ -1,12 +1,12 @@
 # AI Plug-ins — `features/ai-plugins.sh`
 
-One feature installs the four AI plug-ins and their shared settings.
+One feature installs the five AI plug-ins and their shared settings.
 After restarting GIMP, Generative Fill, AI Remove Selection and AI
-Restore Photo appear under **Filters → AI**; WithoutBG under
-**Tools → WithoutBG**.
+Restore Photo appear under **Filters → AI**; Object Selection and Subject
+under **Select**; WithoutBG under **Tools → WithoutBG**.
 
-Everything runs on this machine: Generative Fill, AI Remove Selection and
-AI Restore Photo use the local ComfyUI models (installed by `features/comfyui.sh`), so there
+Everything runs on this machine: Generative Fill, AI Remove Selection, AI
+Restore Photo and AI Object Selection use the local ComfyUI models (installed by `features/comfyui.sh`), so there
 is no account, no API key and nothing is uploaded.
 
 | Tool | What it does | Runs on |
@@ -15,6 +15,7 @@ is no account, no API key and nothing is uploaded.
 | **Generative Fill** | Fills the **selection** from a **text prompt**; also *Image Generator* (text → new layer) | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
 | **AI Remove Selection** | Photoshop-style **Remove tool**: select (or Quick Mask-paint) an object, run, it's gone | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
 | **AI Restore Photo** | Repairs a **scanned photo print**: blotches, stains, scratches, specks (or chemical burns) repainted, the rest of the scan untouched | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
+| **AI Object Selection** | Photoshop's **Object Selection** tool and **Select Subject**: a rough box or lasso around an object becomes a selection of the object | ComfyUI (local): SAM 2.1 |
 
 ## The tools
 
@@ -106,6 +107,37 @@ by hand. It needs only numpy, scipy and Pillow, which GIMP's Flatpak
 Python already ships. Where blotches covered people the model invents
 them: look closely, and paint those areas black if they are wrong.
 
+### AI Object Selection
+
+*Select → Object Selection (AI)*: draw a rough **rectangle or lasso**
+around an object (it does not need to be tight), run it, and the selection
+snaps to the object, like Photoshop's Object Selection tool.
+*Select → Subject (AI)* does the same for the main subject of the whole
+image, like Photoshop's *Select → Subject*.
+
+![A rough box around a mug becomes a selection of the mug](images/object-selection.jpg)
+
+- The model sees the **visible image** (all layers, like Photoshop's
+  *Sample All Layers*), not only the active layer.
+- The area around the box (plus a 25% margin, so the model sees where the
+  object ends) goes to the model at full resolution, up to 2048 px, so
+  small objects keep their edges. Box an object, not the frame around it:
+  a box around a whole card selects the card.
+- The result replaces the selection in one undo step. Refine it with
+  GIMP's tools (Shift/Ctrl + any selection tool, Quick Mask `Q`).
+- About 3 s per selection on a 6 GB GPU; the first run after ComfyUI
+  starts also loads the model (~450 MB). The model stays loaded until
+  ComfyUI stops.
+- Solid objects come out clean. Thin, see-through ones are harder: on a
+  bicycle, SAM filled the back wheel's spokes solid and missed the front
+  wheel where it overlaps a bench. Refine such results with Quick Mask
+  (`Q`) or Shift/Ctrl + a selection tool.
+
+Model: [SAM 2.1](https://github.com/facebookresearch/sam2) large through
+the [ComfyUI-segment-anything-2](https://github.com/kijai/ComfyUI-segment-anything-2)
+nodes and gimp-setup's `GimpSetupBBox` node, all installed by
+`features/comfyui.sh` (model set `sam`).
+
 ## Fully local AI (ComfyUI)
 
 Generative Fill, the Image Generator, AI Remove Selection and AI Restore
@@ -130,11 +162,17 @@ can take minutes.
   `COMFYUI_MODEL_SETS` (checked against their SHA-256) and a `comfyui`
   user service. Without `COMFYUI_DIR`, use any ComfyUI you already run and
   set `COMFYUI_URL`.
-- **ComfyUI must already be running** — the Flatpak sandbox cannot start
-  it. With that service: `systemctl --user start comfyui` before, and
-  `systemctl --user stop comfyui` after, which frees the GPU and the RAM
-  the loaded model holds (up to ~23 GB with Qwen); it is not enabled at
-  boot. The address is `COMFYUI_URL` in `config.sh` (default: the port of
+- **ComfyUI starts and stops with GIMP** (`features/comfyui-with-gimp.sh`):
+  the GIMP menu entry runs `~/.local/bin/gimp-with-comfyui`, which starts
+  the `comfyui` service, runs GIMP and stops the service once the last GIMP
+  closes, freeing the GPU and the RAM the loaded model holds (up to ~23 GB
+  with Qwen). A tool used while ComfyUI is still booting waits for it (up to
+  2 minutes). A ComfyUI that was already running (started by hand or by a
+  script) is left running. GIMP started another way (`flatpak run` in a
+  terminal) does not start it: the Flatpak sandbox cannot. Then use
+  `systemctl --user start comfyui` before and `systemctl --user stop
+  comfyui` after; the service is not enabled at boot.
+  `COMFYUI_START_WITH_GIMP=no` in `config.sh` restores the plain launcher. The address is `COMFYUI_URL` in `config.sh` (default: the port of
   the service, `COMFYUI_PORT`, on this machine; saved to
   `~/.config/PhotoGIMP/comfyui-url`), overridable in *Filters → AI →
   Settings*. Without any of them the tools use ComfyUI's default
@@ -196,6 +234,7 @@ GIMP see them):
 
 ```
 ~/.config/PhotoGIMP/comfyui-url
+~/.config/PhotoGIMP/comfyui-autostart     (yes: ComfyUI starts with GIMP)
 ~/.config/PhotoGIMP/withoutbg-server-url
 ~/.var/app/org.gimp.GIMP/config/PhotoGIMP/…   (sandbox copies)
 ```
@@ -217,6 +256,10 @@ Environment overrides: `COMFYUI_URL`, `WITHOUTBG_SERVER_URL`.
 - **"Cannot reach the WithoutBG server"** — set `WITHOUTBG_SERVER_URL` in
   `config.sh` and re-run `./setup.sh`, or type the URL in the plug-in
   dialog; the default assumes a server on `http://127.0.0.1:8000`.
+- **"ComfyUI is not reachable… started together with GIMP"** — the
+  service failed to come up: `journalctl --user -u comfyui` shows why.
+- **"ComfyUI has no Sam2Segmentation node"** — re-run `./setup.sh` (with
+  `COMFYUI_DIR` set), then restart ComfyUI (close and reopen GIMP).
 - **"ComfyUI is not reachable"** — the message shows the command that
   starts it: `systemctl --user start comfyui` for the service this repo
   installs (another unit name: set `COMFYUI_SERVICE` in GIMP's

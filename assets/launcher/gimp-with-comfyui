@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# gimp-with-comfyui: starts GIMP together with the local AI models.
+#
+# The GIMP launcher (~/.local/share/applications/org.gimp.GIMP.desktop)
+# runs this instead of `flatpak run org.gimp.GIMP`
+# (features/comfyui-with-gimp.sh):
+#
+#   1. starts the ComfyUI user service in the background, so the AI tools
+#      (Filters > AI) find it ready; the tools wait for it while it boots;
+#   2. runs GIMP with the arguments it was given (files to open);
+#   3. when GIMP closes, stops ComfyUI again, freeing the GPU memory -
+#      but only if this launcher started it (a ComfyUI started by hand, or
+#      by another script, keeps running) and no other GIMP is still open.
+#
+# COMFYUI_SERVICE names another systemd user unit (default: comfyui).
+
+set -u
+
+unit="${COMFYUI_SERVICE:-comfyui}"
+started=false
+
+if systemctl --user cat "$unit" >/dev/null 2>&1 &&
+   ! systemctl --user is-active --quiet "$unit"; then
+    if systemctl --user start --no-block "$unit"; then
+        started=true
+    fi
+fi
+
+gimp_open() {
+    flatpak ps --columns=application 2>/dev/null | grep -qx 'org.gimp.GIMP'
+}
+
+status=0
+flatpak run --branch=stable --arch=x86_64 --file-forwarding org.gimp.GIMP "$@" || status=$?
+
+if [[ "$started" == true ]]; then
+    # A second launch hands its files to the GIMP already open and exits
+    # at once; this one (the first) waits for the last GIMP to close.
+    sleep 2
+    while gimp_open; do
+        sleep 5
+    done
+    systemctl --user stop "$unit"
+fi
+
+exit "$status"
