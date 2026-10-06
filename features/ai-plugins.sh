@@ -54,7 +54,8 @@
 #     assets/plug-ins/comfyui/comfyui_client.py
 #     is installed next to the three
 #     ComfyUI plug-ins above; the ComfyUI server itself is
-#     installed by features/comfyui.sh.
+#     installed by linux-mint-setup (steps/comfyui), and
+#     gimp-setup's own ComfyUI node by features/comfyui-nodes.sh.
 #
 #   Shared settings
 #     WITHOUTBG_SERVER_URL / COMFYUI_URL
@@ -475,11 +476,11 @@ ai_configure_settings() {
         print_info "WITHOUTBG_SERVER_URL not set in config.sh — WithoutBG falls back to a local server."
     fi
 
-    # The ComfyUI this setup installs (features/comfyui.sh) listens on
-    # COMFYUI_PORT; without either setting the plug-ins use ComfyUI's
-    # default address.
-    if [[ -z "$comfyui_url" && -n "${COMFYUI_DIR:-}" ]]; then
-        comfyui_url="http://127.0.0.1:${COMFYUI_PORT:-8188}"
+    # The local ComfyUI (linux-mint-setup's `comfyui` service) listens on
+    # the port of that service; without it, or COMFYUI_URL, the plug-ins
+    # use ComfyUI's default address.
+    if [[ -z "$comfyui_url" ]]; then
+        comfyui_url="$(comfyui_service_url)"
     fi
 
     if [[ -n "$comfyui_url" ]]; then

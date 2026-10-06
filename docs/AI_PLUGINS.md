@@ -6,7 +6,7 @@ Restore Photo appear under **Filters → AI**; Object Selection and Subject
 under **Select**; WithoutBG under **Tools → WithoutBG**.
 
 Everything runs on this machine: Generative Fill, AI Remove Selection, AI
-Restore Photo and AI Object Selection use the local ComfyUI models (installed by `features/comfyui.sh`), so there
+Restore Photo and AI Object Selection use the local ComfyUI models (installed by [linux-mint-setup](https://github.com/diegochagas/linux-mint-setup#local-ai-image-models-comfyui)), so there
 is no account, no API key and nothing is uploaded.
 
 | Tool | What it does | Runs on |
@@ -135,8 +135,8 @@ image, like Photoshop's *Select → Subject*.
 
 Model: [SAM 2.1](https://github.com/facebookresearch/sam2) large through
 the [ComfyUI-segment-anything-2](https://github.com/kijai/ComfyUI-segment-anything-2)
-nodes and gimp-setup's `GimpSetupBBox` node, all installed by
-`features/comfyui.sh` (model set `sam`).
+nodes (installed with ComfyUI by linux-mint-setup, model set `sam`) and
+gimp-setup's own `GimpSetupBBox` node (`features/comfyui-nodes.sh`).
 
 ## Fully local AI (ComfyUI)
 
@@ -157,11 +157,14 @@ text is its docstring).
 starting ComfyUI (or after switching model) also loads the model, which
 can take minutes.
 
-- **`features/comfyui.sh` installs ComfyUI** when `COMFYUI_DIR` is set in
-  `config.sh`: ComfyUI, the GGUF node, the model sets from
-  `COMFYUI_MODEL_SETS` (checked against their SHA-256) and a `comfyui`
-  user service. Without `COMFYUI_DIR`, use any ComfyUI you already run and
-  set `COMFYUI_URL`.
+- **ComfyUI is installed by
+  [linux-mint-setup](https://github.com/diegochagas/linux-mint-setup#local-ai-image-models-comfyui)**
+  (`steps/comfyui`, when its `COMFYUI_DIR` is set): ComfyUI, the GGUF and
+  SAM 2 nodes, the model sets (checked against their SHA-256) and a
+  `comfyui` user service. gimp-setup finds that ComfyUI through the
+  service: `features/comfyui-nodes.sh` adds its own `GimpSetupBBox` node
+  to it, and the AI tools use its address. Without it, use any ComfyUI you
+  already run and set `COMFYUI_URL`.
 - **ComfyUI starts and stops with GIMP** (`features/comfyui-with-gimp.sh`):
   the GIMP menu entry runs `~/.local/bin/gimp-with-comfyui`, which starts
   the `comfyui` service, runs GIMP and stops the service once the last GIMP
@@ -173,7 +176,7 @@ can take minutes.
   `systemctl --user start comfyui` before and `systemctl --user stop
   comfyui` after; the service is not enabled at boot.
   `COMFYUI_START_WITH_GIMP=no` in `config.sh` restores the plain launcher. The address is `COMFYUI_URL` in `config.sh` (default: the port of
-  the service, `COMFYUI_PORT`, on this machine; saved to
+  the `comfyui` service on this machine; saved to
   `~/.config/PhotoGIMP/comfyui-url`), overridable in *Filters → AI →
   Settings*. Without any of them the tools use ComfyUI's default
   `http://127.0.0.1:8188`.
@@ -258,11 +261,12 @@ Environment overrides: `COMFYUI_URL`, `WITHOUTBG_SERVER_URL`.
   dialog; the default assumes a server on `http://127.0.0.1:8000`.
 - **"ComfyUI is not reachable… started together with GIMP"** — the
   service failed to come up: `journalctl --user -u comfyui` shows why.
-- **"ComfyUI has no Sam2Segmentation node"** — re-run `./setup.sh` (with
-  `COMFYUI_DIR` set), then restart ComfyUI (close and reopen GIMP).
+- **"ComfyUI has no Sam2Segmentation node"** — re-run linux-mint-setup
+  (its ComfyUI steps install the SAM 2 nodes) and `./setup.sh` (gimp-setup's
+  own node), then restart ComfyUI (close and reopen GIMP).
 - **"ComfyUI is not reachable"** — the message shows the command that
-  starts it: `systemctl --user start comfyui` for the service this repo
-  installs (another unit name: set `COMFYUI_SERVICE` in GIMP's
+  starts it: `systemctl --user start comfyui` for the service
+  linux-mint-setup installs (another unit name: set `COMFYUI_SERVICE` in GIMP's
   environment). The service is not enabled at boot, so this is needed
   after every reboot; wait until the address opens in a browser (~20 s),
   then run the tool again. If it is running, check the address in

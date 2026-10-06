@@ -53,7 +53,7 @@ import urllib.request
 import uuid
 
 DEFAULT_URL = "http://127.0.0.1:8188"   # ComfyUI's default listen address
-SERVICE = "comfyui"     # systemd user unit written by features/comfyui.sh
+SERVICE = "comfyui"     # systemd user unit written by linux-mint-setup (steps/comfyui)
 
 MODELS = {
     "klein": "FLUX.2 klein",
@@ -224,8 +224,8 @@ def get_url(configured=None):
 
 
 def start_command():
-    """Shell command that starts the ComfyUI service gimp-setup installs
-    (features/comfyui.sh); COMFYUI_SERVICE names another systemd unit."""
+    """Shell command that starts the ComfyUI service linux-mint-setup
+    installs (steps/comfyui); COMFYUI_SERVICE names another systemd unit."""
     unit = os.environ.get("COMFYUI_SERVICE", "").strip() or SERVICE
     return "systemctl --user start %s" % unit
 
@@ -1101,8 +1101,9 @@ def generate(prompt, width=1024, height=1024, url=None, progress=None,
 
 
 # SAM 2.1 (Segment Anything) through ComfyUI-segment-anything-2, for the
-# Object Selection tool; features/comfyui.sh installs the node, the model
-# (set "sam") and gimp-setup's own GimpSetupBBox node.
+# Object Selection tool; linux-mint-setup (steps/comfyui) installs the node
+# and the model (set "sam"), features/comfyui-nodes.sh gimp-setup's own
+# GimpSetupBBox node.
 SAM_MODEL = "sam2.1_hiera_large.safetensors"
 
 

@@ -25,8 +25,8 @@
 #   then wait for a ComfyUI that is still
 #   booting instead of failing at once.
 #
-# Needs the ComfyUI service (COMFYUI_DIR
-# set). COMFYUI_START_WITH_GIMP=no in
+# Needs that ComfyUI service.
+# COMFYUI_START_WITH_GIMP=no in
 # config.sh turns it off and restores the
 # plain launcher.
 #
@@ -133,8 +133,8 @@ feature_install() {
         return
     fi
 
-    if ! systemctl --user cat comfyui >/dev/null 2>&1; then
-        print_info "⏭️ No ComfyUI service (set COMFYUI_DIR to install it) — GIMP starts alone."
+    if ! comfyui_service_exists; then
+        print_info "⏭️ No ComfyUI service (install it with linux-mint-setup's ComfyUI steps) — GIMP starts alone."
         SUMMARY+=("$FEATURE_NAME|⏭️ ComfyUI not installed")
         return
     fi

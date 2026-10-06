@@ -1,4 +1,4 @@
-"""ComfyUI nodes gimp-setup's GIMP plug-ins need (features/comfyui.sh
+"""ComfyUI nodes gimp-setup's GIMP plug-ins need (features/comfyui-nodes.sh
 installs this folder into ComfyUI's custom_nodes/).
 
 GimpSetupBBox: box prompts for SAM 2 (ComfyUI-segment-anything-2's

@@ -355,6 +355,39 @@ gimp_profile_dirs() {
 }
 
 ########################################
+# The local ComfyUI behind the AI tools
+# is installed by linux-mint-setup
+# (steps/comfyui) as the `comfyui`
+# systemd user service; the setup finds
+# it through that service.
+#
+# comfyui_service_exists - the service
+#   is there
+# comfyui_service_dir    - ComfyUI's
+#   folder (its WorkingDirectory)
+# comfyui_service_url    - the address
+#   it listens on (its --port, 8188 by
+#   default)
+########################################
+comfyui_service_exists() {
+    systemctl --user cat comfyui >/dev/null 2>&1
+}
+
+comfyui_service_dir() {
+    comfyui_service_exists || return 0
+    systemctl --user show comfyui -p WorkingDirectory --value 2>/dev/null
+}
+
+comfyui_service_url() {
+    local port
+
+    comfyui_service_exists || return 0
+    port="$(systemctl --user cat comfyui 2>/dev/null |
+        sed -n 's/^ExecStart=.*--port[ =]\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+    echo "http://127.0.0.1:${port:-8188}"
+}
+
+########################################
 # Checks whether a Flatpak package
 # is already installed.
 #

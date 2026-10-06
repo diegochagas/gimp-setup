@@ -56,12 +56,13 @@ The AI plug-ins never run inference inside GIMP: WithoutBG needs a
 reachable server (local Docker/Mac app by default, per
 `WITHOUTBG_SERVER_URL`), and Generative Fill/AI Remove Selection/AI Restore Photo use a
 local [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server running
-FLUX.2 klein or Qwen-Image-Edit. That ComfyUI is the one heavy piece, and it
-is **opt-in** (`COMFYUI_DIR`, see [Configuration](#configuration)): about
-42 GB of disk and an NVIDIA GPU (the
-[examples below](#local-ai-models-comfyui) were made on a 6 GB laptop GPU).
-Without it the GIMP install stays light, and the AI tools work against any
-ComfyUI you already run.
+FLUX.2 klein or Qwen-Image-Edit. That ComfyUI is the one heavy piece (about
+42 GB of disk and an NVIDIA GPU; the
+[examples below](#local-ai-models-comfyui) were made on a 6 GB laptop GPU),
+and this setup does not install it:
+[linux-mint-setup](https://github.com/diegochagas/linux-mint-setup#local-ai-image-models-comfyui)
+does, as a `comfyui` user service that gimp-setup finds by itself. Without
+it the AI tools work against any ComfyUI you already run (`COMFYUI_URL`).
 
 ### Configuration
 
@@ -73,15 +74,9 @@ cp config.sh.example config.sh
 
 | Variable               | Purpose                                                                    |
 | ---------------------- | -------------------------------------------------------------------------- |
-| `COMFYUI_DIR`          | Where to install ComfyUI and its models (empty = do not install it)        |
-| `COMFYUI_MODEL_SETS`   | Model sets to download: `qwen`, `klein` or both (default), empty = none    |
-| `COMFYUI_PORT`         | Port of the ComfyUI user service (default `8188`, localhost only)          |
-| `COMFYUI_URL`          | ComfyUI server the AI tools use (default: `COMFYUI_PORT` on this machine)  |
+| `COMFYUI_URL`          | ComfyUI server the AI tools use (default: the local `comfyui` service)     |
+| `COMFYUI_START_WITH_GIMP` | `no`: GIMP does not start and stop the local ComfyUI (default `yes`)    |
 | `WITHOUTBG_SERVER_URL` | WithoutBG server used by the background removal plug-in (default: local)   |
-
-`COMFYUI_REPO`, `COMFYUI_GGUF_NODE_REPO` and `COMFYUI_TORCH_INDEX_URL`
-(see `config.sh.example`) can point the ComfyUI install at a fork or another
-CUDA build.
 
 `WITHOUTBG_SERVER_URL` and the ComfyUI address are written to
 `~/.config/PhotoGIMP/withoutbg-server-url` and
@@ -90,7 +85,7 @@ GIMP Flatpak sandbox, where every AI plug-in finds them (see
 [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)).
 
 `config.sh` is gitignored. Every variable also falls back to an environment
-variable of the same name, so a parent script can `export COMFYUI_DIR=...`
+variable of the same name, so a parent script can `export COMFYUI_URL=...`
 and run `./setup.sh` without creating a `config.sh`.
 
 ## What `setup.sh` Does
@@ -130,7 +125,6 @@ commands and guard direct file writes with `DRY_RUN`).
 | 10       | [`gimp.sh`](features/gimp.sh)                         | Flatpak GIMP + G'MIC + Resynthesizer                    | [GIMP.md](docs/GIMP.md)                               |
 | 30       | [`photogimp.sh`](features/photogimp.sh)               | Photoshop-inspired interface and configuration          | [PHOTOGIMP.md](docs/PHOTOGIMP.md)                     |
 | 40       | [`photoshop-keymap.sh`](features/photoshop-keymap.sh) | Photoshop keyboard shortcuts (shortcutsrc + controllerrc) | [PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md)     |
-| 40       | [`comfyui.sh`](features/comfyui.sh)                   | ComfyUI + FLUX.2 klein / Qwen-Image-Edit models (opt-in, ~42 GB) | [Local AI models](#local-ai-models-comfyui) |
 | 40       | [`slos-gimpainter.sh`](features/slos-gimpainter.sh)   | Painting brushes, dynamics and tool presets             | [SLOS_GIMPAINTER.md](docs/SLOS_GIMPAINTER.md)         |
 | 45       | [`photoshop-theme.sh`](features/photoshop-theme.sh)   | Photoshop look: theme, pasteboard colour, named dock tabs | [PHOTOSHOP_THEME.md](docs/PHOTOSHOP_THEME.md)       |
 | 46       | [`gimp-tab-keys.sh`](features/gimp-tab-keys.sh)       | Ctrl+Tab / Ctrl+Shift+Tab switch image tabs, also on the canvas (X11 helper) | [PHOTOSHOP_KEYMAP.md](docs/PHOTOSHOP_KEYMAP.md) |
@@ -141,6 +135,7 @@ commands and guard direct file writes with `DRY_RUN`).
 | 55       | [`layer-via.sh`](features/layer-via.sh)               | Layer via Copy / Cut (Ctrl+J / Ctrl+Shift+J): a new layer from the selected area, in place | [LAYER_VIA.md](docs/LAYER_VIA.md) |
 | 55       | [`smart-objects.sh`](features/smart-objects.sh)       | Layer > Smart Object: Convert / Edit / Replace Contents (link layers) | [SMART_OBJECTS.md](docs/SMART_OBJECTS.md) |
 | 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The five AI plug-ins (fully local) + shared settings  | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
+| 62       | [`comfyui-nodes.sh`](features/comfyui-nodes.sh)       | gimp-setup's own node in the local ComfyUI (Object Selection) | [Local AI models](#local-ai-models-comfyui) |
 | 65       | [`comfyui-with-gimp.sh`](features/comfyui-with-gimp.sh) | Starts ComfyUI with GIMP, stops it when GIMP closes | [AI_PLUGINS.md](docs/AI_PLUGINS.md#fully-local-ai-comfyui) |
 
 The order matters: GIMP is installed first; PhotoGIMP layers its
@@ -292,43 +287,21 @@ of them, host and Flatpak sandbox alike. Earlier versions also offered
 OpenAI, Google Gemini and Stable Diffusion WebUI; those were removed, and
 the setup deletes the API keys they had saved.
 
-#### Local AI models (ComfyUI) — `features/comfyui.sh`
+#### Local AI models (ComfyUI)
 
 The AI tools run on a local
 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server serving
-open-weight image models, with no accounts, credits or limits. This feature
-installs it; the whole feature is **skipped unless `COMFYUI_DIR` is set** in
-`config.sh`, because the models are tens of GB.
+open-weight image models (FLUX.2 klein, Qwen-Image-Edit, SAM 2.1), with no
+accounts, credits or limits. **This setup does not install it:**
+[linux-mint-setup](https://github.com/diegochagas/linux-mint-setup#local-ai-image-models-comfyui)
+does (its `steps/comfyui`: ComfyUI, its GGUF and SAM 2 nodes, the model sets
+and a `comfyui` systemd user service, not enabled at boot). gimp-setup finds
+that ComfyUI through the service, so it needs no setting of its own:
 
-- Installs ComfyUI in `COMFYUI_DIR` with its own Python virtual environment
-  and PyTorch built for CUDA (`COMFYUI_TORCH_INDEX_URL`, CUDA 12.8 by
-  default). AMD64 only; needs an NVIDIA GPU with the proprietary driver
-  (Driver Manager on Linux Mint) and `python3-venv`.
-- Adds the [ComfyUI-GGUF](https://github.com/city96/ComfyUI-GGUF) custom
-  node, which loads quantized models: a 20B editing model then runs on a
-  6 GB card, keeping the rest of its weights in RAM.
-- Downloads the model sets named in `COMFYUI_MODEL_SETS` (see
-  [`assets/comfyui/models.tsv`](assets/comfyui/models.tsv)), each file
-  verified against the SHA-256 Hugging Face publishes for it and marked as
-  verified so later runs do not re-hash it. An interrupted download resumes
-  on the next run.
-- Adds the [SAM 2 nodes](https://github.com/kijai/ComfyUI-segment-anything-2)
-  (pinned commit) and gimp-setup's own `GimpSetupBBox` node
+- `features/comfyui-nodes.sh` adds gimp-setup's own `GimpSetupBBox` node
   ([`assets/comfyui/custom_nodes`](assets/comfyui/custom_nodes)), used by
-  Object Selection.
-
-  | Set | Models | Size | Good at |
-  | --- | --- | --- | --- |
-  | `qwen` | Qwen-Image-Edit-2511 (4-bit GGUF) + Qwen2.5-VL text encoder, VAE and the 4-step Lightning LoRA | ~22 GB | Best quality: instruction edits that keep characters and text consistent. ~100 s per 1 MP image on a 6 GB GPU |
-  | `klein` | FLUX.2 klein 4B (fp8) + Qwen3-4B text encoder and VAE | ~12 GB | Three times faster (~35 s), lower quality on detailed art. The only one that also generates images from text |
-  | `sam` | SAM 2.1 large (fp16) | ~450 MB | Segment Anything: Object Selection / Select Subject, ~3 s per selection |
-
-  All three are installed by default (about 35 GB of models plus 8 GB for
-  ComfyUI and PyTorch, and it wants 45 GB free); name only some to save
-  disk. All are Apache 2.0, so they can be used commercially.
-- Writes a `comfyui` **systemd user service** on
-  `127.0.0.1:COMFYUI_PORT` (8188 by default). It is deliberately **not
-  enabled at boot**: it holds GPU memory while it runs.
+  Object Selection, to it;
+- the AI tools use the service's address (`COMFYUI_URL` overrides it).
 
 **ComfyUI starts and stops with GIMP** (`features/comfyui-with-gimp.sh`):
 the GIMP menu entry runs `gimp-with-comfyui`, which starts the service,
@@ -349,13 +322,12 @@ Pick a model in the Remove Selection dialog or in `Filters > AI > Settings`;
 the model files are found by name in what the server has installed. Setup,
 timings and limits are in
 [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md#fully-local-ai-comfyui). To use a
-ComfyUI you already run instead, leave `COMFYUI_DIR` empty and set
-`COMFYUI_URL`.
+ComfyUI you already run instead, set `COMFYUI_URL`.
 
 In the ComfyUI web interface, open a workflow from **Templates** (for
 example "Qwen Image Edit"), pick the installed model files in the loader
 nodes, load an image, write the instruction and run. Results are saved in
-`COMFYUI_DIR/output`.
+the `output/` folder of ComfyUI's install.
 
 Scripts can also drive it through its HTTP API, and start the service
 themselves. That is what
