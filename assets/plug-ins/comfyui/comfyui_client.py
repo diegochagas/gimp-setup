@@ -1116,9 +1116,17 @@ def _require_nodes(url, *nodes):
                 raise
             info = {}
         if node not in info:
+            # gimp-setup's own node comes from its features/comfyui-nodes.sh;
+            # ComfyUI and every other node from linux-mint-setup's ComfyUI
+            # steps (steps/comfyui)
+            if node == "GimpSetupBBox":
+                where = "Re-run gimp-setup's ./setup.sh (it adds this node)"
+            else:
+                where = ("Re-run linux-mint-setup's ComfyUI steps "
+                         "(steps/comfyui install it)")
             raise ComfyUIError(
-                "ComfyUI has no %s node. Re-run gimp-setup (features/"
-                "comfyui.sh installs it), then restart ComfyUI." % node)
+                "ComfyUI has no %s node. %s, then restart ComfyUI (close "
+                "and reopen GIMP)." % (node, where))
 
 
 def segment(image_png, boxes, url=None, progress=None, timeout=TIMEOUT):
