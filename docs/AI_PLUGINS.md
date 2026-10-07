@@ -1,9 +1,9 @@
 # AI Plug-ins — `features/ai-plugins.sh`
 
-One feature installs the five AI plug-ins and their shared settings.
+One feature installs the four AI plug-ins and their shared settings.
 After restarting GIMP, Generative Fill, AI Remove Selection and AI
 Restore Photo appear under **Filters → AI**; Object Selection and Subject
-under **Select**; WithoutBG under **Tools → WithoutBG**.
+under **Select**.
 
 Everything runs on this machine: Generative Fill, AI Remove Selection, AI
 Restore Photo and AI Object Selection use the local ComfyUI models (installed by [linux-mint-setup](https://github.com/diegochagas/linux-mint-setup#local-ai-image-models-comfyui)), so there
@@ -11,31 +11,12 @@ is no account, no API key and nothing is uploaded.
 
 | Tool | What it does | Runs on |
 |---|---|---|
-| **WithoutBG** | Cuts the subject out: adds the alpha matte as an unapplied layer mask | WithoutBG server from `WITHOUTBG_SERVER_URL` |
 | **Generative Fill** | Fills the **selection** from a **text prompt**; also *Image Generator* (text → new layer) | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
 | **AI Remove Selection** | Photoshop-style **Remove tool**: select (or Quick Mask-paint) an object, run, it's gone | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
 | **AI Restore Photo** | Repairs a **scanned photo print**: blotches, stains, scratches, specks (or chemical burns) repainted, the rest of the scan untouched | ComfyUI (local): FLUX.2 klein or Qwen-Image-Edit |
 | **AI Object Selection** | Photoshop's **Object Selection** tool and **Select Subject**: a rough box or lasso around an object becomes a selection of the object | ComfyUI (local): SAM 2.1 |
 
 ## The tools
-
-### WithoutBG (background removal)
-
-A **vendored, patched** copy of
-[withoutbg/withoutbg-gimp](https://github.com/withoutbg/withoutbg-gimp)
-(GPL v3+) from `assets/vendor/withoutbg/` — see
-[PATCHES.md](../assets/vendor/withoutbg/PATCHES.md) for the diff. It
-targets the WithoutBG API set in `WITHOUTBG_SERVER_URL` in `config.sh`
-— your own self-hosted instance, or a local server (Docker or the Mac
-app) by default. No key needed, and the URL can still be changed per run
-in the dialog.
-
-Usage: **Tools → WithoutBG → Remove Background…** — the matte comes back
-as an *unapplied* layer mask so you can review or tweak it, then commit
-with *Layer → Mask → Apply Layer Mask*.
-
-It replaces the old rembg-based *AI Remove Background* plug-in, which the
-setup removes from the GIMP profiles automatically.
 
 ### Generative Fill (GIMP AI Plugin)
 
@@ -238,11 +219,10 @@ GIMP see them):
 ```
 ~/.config/PhotoGIMP/comfyui-url
 ~/.config/PhotoGIMP/comfyui-autostart     (yes: ComfyUI starts with GIMP)
-~/.config/PhotoGIMP/withoutbg-server-url
 ~/.var/app/org.gimp.GIMP/config/PhotoGIMP/…   (sandbox copies)
 ```
 
-Environment overrides: `COMFYUI_URL`, `WITHOUTBG_SERVER_URL`.
+Environment override: `COMFYUI_URL`.
 
 > **Privacy:** every tool runs on this machine, so images never leave it.
 
@@ -252,13 +232,17 @@ Environment overrides: `COMFYUI_URL`, `WITHOUTBG_SERVER_URL`.
 > `gemini-api-key` / `openai-api-key` files and the key and settings kept in
 > the plug-in's `config.json`.
 
+> **Removed WithoutBG:** earlier versions installed the WithoutBG plug-in
+> (*Tools → WithoutBG → Remove Background*), which needed a separate
+> WithoutBG server. It is gone: the setup deletes its plug-in, its saved
+> dialog settings and the `withoutbg-server-url` files. To cut a subject
+> out, use **Select → Subject (AI)** and *Layer → Mask → Add Layer Mask*
+> (initialize to the selection), or GIMPhoto's Remove Background.
+
 ## Troubleshooting
 
 - **Tools missing from Filters → AI** — restart GIMP; the setup clears
   `pluginrc` so GIMP re-scans plug-ins on the next start.
-- **"Cannot reach the WithoutBG server"** — set `WITHOUTBG_SERVER_URL` in
-  `config.sh` and re-run `./setup.sh`, or type the URL in the plug-in
-  dialog; the default assumes a server on `http://127.0.0.1:8000`.
 - **"ComfyUI is not reachable… started together with GIMP"** — the
   service failed to come up: `journalctl --user -u comfyui` shows why.
 - **"ComfyUI has no Sam2Segmentation node"** — re-run linux-mint-setup
