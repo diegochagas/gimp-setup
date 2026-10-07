@@ -4,18 +4,8 @@
 ########################################
 # Feature: AI Plug-ins
 #
-# Installs the five AI plug-ins as one
+# Installs the four AI plug-ins as one
 # feature, plus their shared settings:
-#
-#   WithoutBG
-#     Tools > WithoutBG > Remove Background
-#     Cuts out the subject: adds the
-#     alpha matte as an unapplied layer
-#     mask. Vendored patched copy of
-#     withoutbg/withoutbg-gimp targeting
-#     the server in WITHOUTBG_SERVER_URL
-#     — see assets/vendor/withoutbg/PATCHES.md.
-#     No key needed.
 #
 #   Generative Fill (GIMP AI Plugin)
 #     Filters > AI > Generative Fill
@@ -58,14 +48,22 @@
 #     gimp-setup's own ComfyUI node by features/comfyui-nodes.sh.
 #
 #   Shared settings
-#     WITHOUTBG_SERVER_URL / COMFYUI_URL
-#     from config.sh
-#     are written to ~/.config/PhotoGIMP/
+#     COMFYUI_URL from config.sh (or the
+#     local comfyui service's address)
+#     is written to ~/.config/PhotoGIMP/
 #     on the host AND inside the GIMP
 #     Flatpak sandbox
 #     (~/.var/app/org.gimp.GIMP/config/),
-#     so the plug-ins find them in both
+#     so the plug-ins find it in both
 #     worlds.
+#
+#   WithoutBG removed
+#     Earlier versions installed the
+#     WithoutBG plug-in (background
+#     removal on a separate WithoutBG
+#     server); it is removed again, with
+#     its settings (see
+#     ai_remove_withoutbg).
 #
 #   Online providers removed
 #     Earlier versions also offered
@@ -218,33 +216,54 @@ ai_write_shared_key() {
 }
 
 ########################################
-# WithoutBG: background removal via the
-# self-hosted WithoutBG server. Vendored
-# patched copy of withoutbg/withoutbg-gimp
-# (see assets/vendor/withoutbg/PATCHES.md).
-# Replaces the old rembg-based AI Remove
-# Background plug-in.
+# WithoutBG (background removal on a
+# separate WithoutBG server) is no longer
+# installed: removes its plug-in, the
+# rembg-based one it replaced, their saved
+# dialog settings and the server address
+# file, from every profile and from the
+# Flatpak sandbox.
 ########################################
-ai_install_withoutbg() {
-    local src="$ASSETS_DIR/vendor/withoutbg/withoutbg.py"
+ai_remove_withoutbg() {
+    local removed=false
+    local dir file
 
-    if ! file_exists "$src"; then
-        print_info "❌ Vendored plug-in file not found: $src"
-        SUMMARY+=("WithoutBG|❌ Missing assets")
-        return
+    for dir in "${AI_PROFILES[@]}"; do
+        for file in "$dir/plug-ins/withoutbg" "$dir/plug-ins/ai-remove-background-g3"; do
+            if [[ -d "$file" ]]; then
+                run rm -rf "$file"
+                removed=true
+            fi
+        done
+        for file in "$dir"/plug-in-settings/GimpProcedureConfigRun-withoutbg-*; do
+            if file_exists "$file"; then
+                run rm -f "$file"
+                removed=true
+            fi
+        done
+    done
+
+    local key_dirs=("$HOME/.config/PhotoGIMP")
+    if [[ -d "$HOME/.var/app/org.gimp.GIMP" ]]; then
+        key_dirs+=("$HOME/.var/app/org.gimp.GIMP/config/PhotoGIMP")
     fi
+    for dir in "${key_dirs[@]}"; do
+        file="$dir/withoutbg-server-url"
+        if file_exists "$file"; then
+            run rm -f "$file"
+            removed=true
+        fi
+    done
 
-    print_step "Installing WithoutBG (background removal)..."
-
-    # Replaces the old rembg-based plug-in.
-    local rc=0
-    ai_install_plugin "withoutbg" "ai-remove-background-g3" "$src" || rc=$?
-
-    if (( rc == 0 )); then
+    if [[ "$removed" == true ]]; then
         ai_refresh_pluginrc
-        SUMMARY+=("WithoutBG|$INSTALLATION_MESSAGE")
+        if [[ "$DRY_RUN" == true ]]; then
+            SUMMARY+=("WithoutBG|🔄 Would remove")
+        else
+            SUMMARY+=("WithoutBG|✅ Removed")
+        fi
     else
-        SUMMARY+=("WithoutBG|⏭️ Already installed")
+        SUMMARY+=("WithoutBG|⏭️ Not installed")
     fi
 }
 
@@ -467,15 +486,6 @@ ai_configure_settings() {
     local comfyui_url="${COMFYUI_URL:-}"
     local rc
 
-    if [[ -n "${WITHOUTBG_SERVER_URL:-}" ]]; then
-        configured=true
-        rc=0
-        ai_write_shared_key "withoutbg-server-url" "$WITHOUTBG_SERVER_URL" || rc=$?
-        (( rc == 0 )) && changed=true
-    else
-        print_info "WITHOUTBG_SERVER_URL not set in config.sh — WithoutBG falls back to a local server."
-    fi
-
     # The local ComfyUI (linux-mint-setup's `comfyui` service) listens on
     # the port of that service; without it, or COMFYUI_URL, the plug-ins
     # use ComfyUI's default address.
@@ -508,7 +518,7 @@ feature_install() {
         return
     fi
 
-    ai_install_withoutbg
+    ai_remove_withoutbg
 
     ai_install_generative_fill
 

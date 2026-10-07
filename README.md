@@ -52,9 +52,8 @@ no separate hardware bar beyond what GIMP itself needs:
 | CPU | 64-bit CPU | — |
 | GPU | None required | — |
 
-The AI plug-ins never run inference inside GIMP: WithoutBG needs a
-reachable server (local Docker/Mac app by default, per
-`WITHOUTBG_SERVER_URL`), and Generative Fill/AI Remove Selection/AI Restore Photo use a
+The AI plug-ins never run inference inside GIMP: Generative Fill, AI
+Remove Selection, AI Restore Photo and AI Object Selection use a
 local [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server running
 FLUX.2 klein or Qwen-Image-Edit. That ComfyUI is the one heavy piece (about
 42 GB of disk and an NVIDIA GPU; the
@@ -76,10 +75,8 @@ cp config.sh.example config.sh
 | ---------------------- | -------------------------------------------------------------------------- |
 | `COMFYUI_URL`          | ComfyUI server the AI tools use (default: the local `comfyui` service)     |
 | `COMFYUI_START_WITH_GIMP` | `no`: GIMP does not start and stop the local ComfyUI (default `yes`)    |
-| `WITHOUTBG_SERVER_URL` | WithoutBG server used by the background removal plug-in (default: local)   |
 
-`WITHOUTBG_SERVER_URL` and the ComfyUI address are written to
-`~/.config/PhotoGIMP/withoutbg-server-url` and
+The ComfyUI address is written to
 `~/.config/PhotoGIMP/comfyui-url` on the host **and** inside the
 GIMP Flatpak sandbox, where every AI plug-in finds them (see
 [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)).
@@ -134,7 +131,7 @@ commands and guard direct file writes with `DRY_RUN`).
 | 55       | [`shape-tool.sh`](features/shape-tool.sh)             | Photoshop's shape tools (U): rectangle, ellipse, triangle, polygon, line, custom shapes as vector layers | [SHAPE_TOOL.md](docs/SHAPE_TOOL.md) |
 | 55       | [`layer-via.sh`](features/layer-via.sh)               | Layer via Copy / Cut (Ctrl+J / Ctrl+Shift+J): a new layer from the selected area, in place | [LAYER_VIA.md](docs/LAYER_VIA.md) |
 | 55       | [`smart-objects.sh`](features/smart-objects.sh)       | Layer > Smart Object: Convert / Edit / Replace Contents (link layers) | [SMART_OBJECTS.md](docs/SMART_OBJECTS.md) |
-| 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The five AI plug-ins (fully local) + shared settings  | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
+| 60       | [`ai-plugins.sh`](features/ai-plugins.sh)             | The four AI plug-ins (fully local) + shared settings  | [AI_PLUGINS.md](docs/AI_PLUGINS.md)           |
 | 62       | [`comfyui-nodes.sh`](features/comfyui-nodes.sh)       | gimp-setup's own node in the local ComfyUI (Object Selection) | [Local AI models](#local-ai-models-comfyui) |
 | 65       | [`comfyui-with-gimp.sh`](features/comfyui-with-gimp.sh) | Starts ComfyUI with GIMP, stops it when GIMP closes | [AI_PLUGINS.md](docs/AI_PLUGINS.md#fully-local-ai-comfyui) |
 
@@ -256,13 +253,10 @@ original); without one, Ctrl+J duplicates the layer. See
 
 #### AI Plug-ins — `features/ai-plugins.sh`
 
-The five AI plug-ins, installed as one feature (details in
+The four AI plug-ins, installed as one feature (details in
 [docs/AI_PLUGINS.md](docs/AI_PLUGINS.md)). Everything runs on this machine:
 no account, no API key, nothing is uploaded.
 
-- **WithoutBG** — `Tools > WithoutBG > Remove Background…`. Cuts out the
-  subject via the WithoutBG server set in `WITHOUTBG_SERVER_URL` and adds
-  the matte as an unapplied layer mask.
 - **Generative Fill** — `Filters > AI > Generative Fill…`. Fills the
   selection from a text prompt; also Image Generator. Vendored patched
   [GIMP AI Plugin](https://github.com/lukaso/gimp-ai) on the local ComfyUI
