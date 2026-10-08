@@ -371,11 +371,87 @@ ai_install_object_select() {
 }
 
 ########################################
+# numpy, scipy and Pillow for AI Restore
+# Photo's damage mask: GIMP's Flatpak
+# does not ship them, so they go into its
+# Python's user site
+# (~/.var/app/org.gimp.GIMP/data/python/
+# lib/pythonX.Y/site-packages), as
+# official wheels for that Python,
+# installed with the host's pip. The
+# folder is per Python version: when a
+# GIMP update brings a newer Python,
+# running the setup again installs them
+# for it.
+########################################
+AI_RESTORE_PYTHON_LIBS=(numpy scipy pillow)
+
+ai_install_restore_photo_libs() {
+    local app="org.gimp.GIMP"
+
+    if ! flatpak info "$app" >/dev/null 2>&1; then
+        SUMMARY+=("AI Restore Photo libraries|⏭️ No Flatpak GIMP")
+        return
+    fi
+
+    # one sandbox start: whether they import, the Python version, its user
+    # site and the runtime's glibc (for the wheels' manylinux tags)
+    local probe status version user_site glibc
+    if ! probe="$(flatpak run --command=python3 "$app" -c '
+import importlib.util, platform, site, sys
+ok = all(importlib.util.find_spec(m) for m in ("numpy", "scipy", "PIL"))
+print("ok" if ok else "missing", "%d.%d" % sys.version_info[:2], site.USER_SITE, platform.libc_ver()[1])
+' 2>&1)"; then
+        print_info "❌ Could not run GIMP's Python: $probe"
+        SUMMARY+=("AI Restore Photo libraries|❌ GIMP's Python not found")
+        return
+    fi
+    read -r status version user_site glibc <<<"$(tail -n 1 <<<"$probe")"
+
+    if [[ "$status" == ok ]]; then
+        SUMMARY+=("AI Restore Photo libraries|⏭️ Already installed")
+        return
+    fi
+    # inside the sandbox the app's data folder is /var/data
+    if [[ "$status" != missing || "$user_site" != /var/data/* || ! "$glibc" =~ ^2\.[0-9]+$ ]]; then
+        print_info "❌ Unexpected answer from GIMP's Python: $probe"
+        SUMMARY+=("AI Restore Photo libraries|❌ GIMP's Python not found")
+        return
+    fi
+    user_site="$HOME/.var/app/$app/data${user_site#/var/data}"
+
+    if ! python3 -m pip --version >/dev/null 2>&1; then
+        print_info "❌ pip is needed to install numpy, scipy and Pillow (sudo apt install python3-pip)"
+        SUMMARY+=("AI Restore Photo libraries|❌ pip missing")
+        return
+    fi
+
+    print_step "Installing numpy, scipy and Pillow for GIMP's Python $version..."
+
+    # every manylinux the runtime's glibc runs, newest first
+    local arch minor platforms=()
+    arch="$(uname -m)"
+    for ((minor = ${glibc#2.}; minor >= 17; minor--)); do
+        platforms+=(--platform "manylinux_2_${minor}_$arch")
+    done
+    platforms+=(--platform "manylinux2014_$arch")
+
+    if run python3 -m pip install --quiet --upgrade --target "$user_site" \
+        --only-binary=:all: --implementation cp --python-version "$version" \
+        "${platforms[@]}" "${AI_RESTORE_PYTHON_LIBS[@]}"; then
+        print_info "Installed into: $user_site"
+        SUMMARY+=("AI Restore Photo libraries|$INSTALLATION_MESSAGE")
+    else
+        SUMMARY+=("AI Restore Photo libraries|❌ pip install failed")
+    fi
+}
+
+########################################
 # AI Restore Photo: repairs scanned photo
 # prints (the photo-restore method); the
 # damage mask is computed by
-# restore_mask.py with the numpy, scipy
-# and Pillow GIMP's Python ships.
+# restore_mask.py with numpy, scipy and
+# Pillow (ai_install_restore_photo_libs).
 ########################################
 ai_install_restore_photo() {
     local plugin_dir="$ASSETS_DIR/plug-ins/ai-restore-photo"
@@ -525,6 +601,8 @@ feature_install() {
     ai_install_remove_selection
 
     ai_install_restore_photo
+
+    ai_install_restore_photo_libs
 
     ai_install_object_select
 

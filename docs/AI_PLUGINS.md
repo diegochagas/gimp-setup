@@ -84,8 +84,13 @@ cropping and colour correction are left to GIMP's own tools (*Image →
 Transform*, *Colors → Levels / Auto*). Unlike the photo-restore command
 line, the GIMP tool has no face guard and no Poisson blending (they need
 OpenCV, which GIMP's Python does not have): check faces and fix the mask
-by hand. It needs only numpy, scipy and Pillow, which GIMP's Flatpak
-Python already ships. Where blotches covered people the model invents
+by hand. It needs numpy, scipy and Pillow, which GIMP's Flatpak does not
+ship: the setup installs them (official wheels, with your pip) into the user
+folder of GIMP's Python,
+`~/.var/app/org.gimp.GIMP/data/python/lib/pythonX.Y/site-packages`. That
+folder belongs to one Python version: after a GIMP update that brings a
+newer Python, *AI Restore Photo* says so, and running `./setup.sh` again
+installs them for it. Where blotches covered people the model invents
 them: look closely, and paint those areas black if they are wrong.
 
 ### AI Object Selection

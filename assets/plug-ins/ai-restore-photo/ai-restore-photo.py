@@ -40,7 +40,29 @@ from gi.repository import Gegl
 from gi.repository import GLib, GObject, Gio
 
 import comfyui_client
-import restore_mask
+
+# restore_mask needs numpy, scipy and Pillow, which GIMP's Flatpak does not
+# ship: gimp-setup installs them into its Python's user site. Without them
+# the menu entry is still there and says what to do, instead of the
+# plug-in vanishing from the menus.
+try:
+    import restore_mask
+except ImportError as e:
+    restore_mask = None
+    if os.path.exists('/.flatpak-info'):
+        HOW = ("Run gimp-setup's setup.sh again to install them, then "
+               "restart GIMP.")
+    else:
+        HOW = ("Install them for that Python (python3 -m pip install "
+               "--user numpy scipy pillow), then restart GIMP.")
+    MISSING_LIBS = (
+        'AI Restore Photo needs numpy, scipy and Pillow in GIMP\'s Python '
+        '(%s), which GIMP does not ship. %s (%s)'
+        % ('.'.join(map(str, sys.version_info[:2])), HOW, e))
+
+# restore_mask's defaults, for the dialog when it cannot be imported
+THRESHOLD = int(restore_mask.THRESHOLD) if restore_mask else 22
+MIN_AREA = restore_mask.MIN_AREA if restore_mask else 300
 
 
 # ------------------------------------------------------------- gimp helpers
@@ -152,6 +174,10 @@ def run(procedure, run_mode, image, drawables, config, data):
                                                GLib.Error())
         dialog.destroy()
 
+    if restore_mask is None:
+        return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR,
+                                           GLib.Error(MISSING_LIBS))
+
     try:
         _run_restore(image,
                      config.get_property('model'),
@@ -210,12 +236,12 @@ class AiRestorePhoto(Gimp.PlugIn):
             'How much the model must have changed a spot (0-255) for it to '
             'count as repaired damage: lower catches faint damage (white '
             'on white) but also takes changes that are not damage',
-            5, 80, int(restore_mask.THRESHOLD), GObject.ParamFlags.READWRITE)
+            5, 80, THRESHOLD, GObject.ParamFlags.READWRITE)
         procedure.add_int_argument(
             'min-area', 'Smallest _repair (px)',
             'Changed spots smaller than this are ignored unless the change '
             'is strong (a moved highlight, a redrawn button)',
-            0, 100000, restore_mask.MIN_AREA, GObject.ParamFlags.READWRITE)
+            0, 100000, MIN_AREA, GObject.ParamFlags.READWRITE)
 
         procedure.add_menu_path('<Image>/Filters/AI')
         return procedure
