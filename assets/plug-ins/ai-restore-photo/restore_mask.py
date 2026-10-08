@@ -17,7 +17,8 @@ guard, Poisson blending, affine alignment):
      area reaches `min_area` px, or when it is small but the change is
      strong. The result is grown GROW px and feathered FEATHER px.
 
-GIMP's Flatpak Python ships numpy, scipy and Pillow. Test outside GIMP:
+GIMP's Flatpak does not ship numpy, scipy and Pillow: gimp-setup installs
+them into its Python's user site. Test outside GIMP:
 
     restore_mask.py scan.png model.png out.png [threshold] [min_area]
 

@@ -39,7 +39,9 @@ Each run writes a log to `logs/`.
 
 ### Requirements
 
-`curl`, `unzip`, `jq`, `git`, `flatpak` and `python3` must be available.
+`curl`, `unzip`, `jq`, `git`, `flatpak` and `python3` must be available,
+and `pip` (`python3-pip`) for the numpy, scipy and Pillow of *AI Restore
+Photo*.
 No `sudo` is required — everything installs to Flatpak and the user home.
 
 This installs on top of whatever machine already runs Flatpak, so there's
