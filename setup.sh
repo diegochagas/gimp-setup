@@ -26,7 +26,7 @@ readonly SCRIPT_DIR
 #
 # Every configuration value also falls back to an environment variable of
 # the same name, so this script can be driven by a parent setup script
-# (for example, linux-mint-setup) without a local config.sh.
+# (for example, another setup script) without a local config.sh.
 CONFIG_FILE="$SCRIPT_DIR/config.sh"
 
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -356,8 +356,9 @@ gimp_profile_dirs() {
 
 ########################################
 # The local ComfyUI behind the AI tools
-# is installed by linux-mint-setup
-# (steps/comfyui) as the `comfyui`
+# is installed by local-ai-setup
+# (github.com/diegochagas/local-ai-
+# setup) as the `comfyui`
 # systemd user service; the setup finds
 # it through that service.
 #

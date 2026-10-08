@@ -15,10 +15,10 @@ One-command installer for the complete GIMP ecosystem on Linux:
 Flatpak GIMP 3, plug-ins, brushes, presets and extra features such as
 Photoshop-style shortcuts and fully local AI tools.
 
-Companion project of
-[linux-mint-setup](https://github.com/diegochagas/linux-mint-setup), which
-runs this setup automatically as part of a full machine install. It also
-works standalone on any distribution with Flatpak.
+It works standalone on any distribution with Flatpak. (For a GIMP with
+Photoshop's tools built in, [GIMPhoto](https://github.com/diegochagas/gimphoto)
+is what [linux-mint-setup](https://github.com/diegochagas/linux-mint-setup)
+installs.)
 
 ## Installation
 
@@ -61,7 +61,7 @@ FLUX.2 klein or Qwen-Image-Edit. That ComfyUI is the one heavy piece (about
 42 GB of disk and an NVIDIA GPU; the
 [examples below](#local-ai-models-comfyui) were made on a 6 GB laptop GPU),
 and this setup does not install it:
-[linux-mint-setup](https://github.com/diegochagas/linux-mint-setup#local-ai-image-models-comfyui)
+[local-ai-setup](https://github.com/diegochagas/local-ai-setup)
 does, as a `comfyui` user service that gimp-setup finds by itself. Without
 it the AI tools work against any ComfyUI you already run (`COMFYUI_URL`).
 
@@ -289,8 +289,8 @@ The AI tools run on a local
 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) server serving
 open-weight image models (FLUX.2 klein, Qwen-Image-Edit, SAM 2.1), with no
 accounts, credits or limits. **This setup does not install it:**
-[linux-mint-setup](https://github.com/diegochagas/linux-mint-setup#local-ai-image-models-comfyui)
-does (its `steps/comfyui`: ComfyUI, its GGUF and SAM 2 nodes, the model sets
+[local-ai-setup](https://github.com/diegochagas/local-ai-setup)
+does (ComfyUI, its GGUF and SAM 2 nodes, the model sets
 and a `comfyui` systemd user service, not enabled at boot). gimp-setup finds
 that ComfyUI through the service, so it needs no setting of its own:
 

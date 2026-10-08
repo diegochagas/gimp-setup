@@ -134,7 +134,7 @@ feature_install() {
     fi
 
     if ! comfyui_service_exists; then
-        print_info "⏭️ No ComfyUI service (install it with linux-mint-setup's ComfyUI steps) — GIMP starts alone."
+        print_info "⏭️ No ComfyUI service (install it with local-ai-setup: github.com/diegochagas/local-ai-setup) — GIMP starts alone."
         SUMMARY+=("$FEATURE_NAME|⏭️ ComfyUI not installed")
         return
     fi
