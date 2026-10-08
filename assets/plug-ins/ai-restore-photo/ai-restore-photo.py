@@ -49,11 +49,16 @@ try:
     import restore_mask
 except ImportError as e:
     restore_mask = None
+    if os.path.exists('/.flatpak-info'):
+        HOW = ("Run gimp-setup's setup.sh again to install them, then "
+               "restart GIMP.")
+    else:
+        HOW = ("Install them for that Python (python3 -m pip install "
+               "--user numpy scipy pillow), then restart GIMP.")
     MISSING_LIBS = (
         'AI Restore Photo needs numpy, scipy and Pillow in GIMP\'s Python '
-        '(%s), which GIMP does not ship. Run gimp-setup\'s setup.sh again '
-        'to install them, then restart GIMP. (%s)'
-        % ('.'.join(map(str, sys.version_info[:2])), e))
+        '(%s), which GIMP does not ship. %s (%s)'
+        % ('.'.join(map(str, sys.version_info[:2])), HOW, e))
 
 # restore_mask's defaults, for the dialog when it cannot be imported
 THRESHOLD = int(restore_mask.THRESHOLD) if restore_mask else 22

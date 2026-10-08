@@ -394,19 +394,27 @@ ai_install_restore_photo_libs() {
         return
     fi
 
-    if flatpak run --command=python3 "$app" -c 'import numpy, scipy, PIL' >/dev/null 2>&1; then
+    # one sandbox start: whether they import, the Python version, its user
+    # site and the runtime's glibc (for the wheels' manylinux tags)
+    local probe status version user_site glibc
+    if ! probe="$(flatpak run --command=python3 "$app" -c '
+import importlib.util, platform, site, sys
+ok = all(importlib.util.find_spec(m) for m in ("numpy", "scipy", "PIL"))
+print("ok" if ok else "missing", "%d.%d" % sys.version_info[:2], site.USER_SITE, platform.libc_ver()[1])
+' 2>&1)"; then
+        print_info "❌ Could not run GIMP's Python: $probe"
+        SUMMARY+=("AI Restore Photo libraries|❌ GIMP's Python not found")
+        return
+    fi
+    read -r status version user_site glibc <<<"$(tail -n 1 <<<"$probe")"
+
+    if [[ "$status" == ok ]]; then
         SUMMARY+=("AI Restore Photo libraries|⏭️ Already installed")
         return
     fi
-
-    local version user_site
-    version="$(flatpak run --command=python3 "$app" -c \
-        'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)"
-    user_site="$(flatpak run --command=python3 "$app" -c \
-        'import site; print(site.USER_SITE)' 2>/dev/null)"
     # inside the sandbox the app's data folder is /var/data
-    if [[ -z "$version" || "$user_site" != /var/data/* ]]; then
-        print_info "❌ Could not ask GIMP's Python for its version and user folder"
+    if [[ "$status" != missing || "$user_site" != /var/data/* || ! "$glibc" =~ ^2\.[0-9]+$ ]]; then
+        print_info "❌ Unexpected answer from GIMP's Python: $probe"
         SUMMARY+=("AI Restore Photo libraries|❌ GIMP's Python not found")
         return
     fi
@@ -420,12 +428,17 @@ ai_install_restore_photo_libs() {
 
     print_step "Installing numpy, scipy and Pillow for GIMP's Python $version..."
 
-    local arch
+    # every manylinux the runtime's glibc runs, newest first
+    local arch minor platforms=()
     arch="$(uname -m)"
+    for ((minor = ${glibc#2.}; minor >= 17; minor--)); do
+        platforms+=(--platform "manylinux_2_${minor}_$arch")
+    done
+    platforms+=(--platform "manylinux2014_$arch")
+
     if run python3 -m pip install --quiet --upgrade --target "$user_site" \
         --only-binary=:all: --implementation cp --python-version "$version" \
-        --platform "manylinux_2_28_$arch" --platform "manylinux_2_17_$arch" \
-        --platform "manylinux2014_$arch" "${AI_RESTORE_PYTHON_LIBS[@]}"; then
+        "${platforms[@]}" "${AI_RESTORE_PYTHON_LIBS[@]}"; then
         print_info "Installed into: $user_site"
         SUMMARY+=("AI Restore Photo libraries|$INSTALLATION_MESSAGE")
     else
