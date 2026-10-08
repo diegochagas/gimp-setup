@@ -44,7 +44,7 @@
 #     assets/plug-ins/comfyui/comfyui_client.py
 #     is installed next to the three
 #     ComfyUI plug-ins above; the ComfyUI server itself is
-#     installed by linux-mint-setup (steps/comfyui), and
+#     installed by local-ai-setup, and
 #     gimp-setup's own ComfyUI node by features/comfyui-nodes.sh.
 #
 #   Shared settings
@@ -562,7 +562,7 @@ ai_configure_settings() {
     local comfyui_url="${COMFYUI_URL:-}"
     local rc
 
-    # The local ComfyUI (linux-mint-setup's `comfyui` service) listens on
+    # The local ComfyUI (local-ai-setup's `comfyui` service) listens on
     # the port of that service; without it, or COMFYUI_URL, the plug-ins
     # use ComfyUI's default address.
     if [[ -z "$comfyui_url" ]]; then

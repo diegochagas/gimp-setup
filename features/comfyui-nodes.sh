@@ -11,7 +11,7 @@
 #
 # ComfyUI itself, its models and its
 # `comfyui` user service are installed by
-# linux-mint-setup (steps/comfyui); this
+# local-ai-setup; this
 # feature finds that ComfyUI through the
 # service and is skipped without it.
 #
@@ -35,7 +35,7 @@ feature_install() {
     comfyui_dir="$(comfyui_service_dir)"
 
     if [[ -z "$comfyui_dir" || ! -f "$comfyui_dir/main.py" ]]; then
-        print_info "⏭️ No local ComfyUI (install it with linux-mint-setup's ComfyUI steps)."
+        print_info "⏭️ No local ComfyUI (install it with local-ai-setup: github.com/diegochagas/local-ai-setup)."
         SUMMARY+=("$FEATURE_NAME|⏭️ ComfyUI not installed")
         return 0
     fi
